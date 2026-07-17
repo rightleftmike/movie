@@ -1,12 +1,13 @@
 # Rewatchables · Mikel — Cloud Edition
 
-**Live app:** https://ylexjdgfkcinnxjzmakt.supabase.co/functions/v1/app
+**Live app:** https://rightleftmike.github.io/movie/ (the old Supabase URL redirects here)
+**Hosting:** GitHub Pages, repo `rightleftmike/movie`. Update the app by pushing a new `index.html` to `main`.
 Add to phone home screen: open in Safari/Chrome → Share → "Add to Home Screen".
 
 ## Architecture
 
 - **Supabase project** `rewatchables` (ref: `ylexjdgfkcinnxjzmakt`, org: Brilliant Bar, free tier, us-east-1)
-- **Hosting:** Edge Function `app` serves the single-page app. The HTML itself lives in the `site_assets` table — the function reads it with a 60s cache, so the app can be updated with plain SQL, no redeploy.
+- **Hosting:** GitHub Pages (Supabase blocks HTML on its shared domain). The edge function `app` now redirects there and serves the episode-list snapshot at `?rw=1`. `site_assets` keeps a backup copy of the app source.
 - **Episode list:** fetched live in-browser from the public Google Sheet CSV endpoint
   `https://docs.google.com/spreadsheets/d/13KsNb1SxA7DYYQAzhaYxj_qKX0PXV1PXyKAZ7cEapRc/gviz/tq?tqx=out:csv&sheet=episode list`
   Fallbacks: last successful load cached in localStorage → bundled snapshot at `.../app?rw=1` (292 films).
