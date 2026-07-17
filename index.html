@@ -181,6 +181,7 @@ hr.gold{border:none;border-top:1px solid var(--line);margin:14px 0}
     <h2>Episode List <span class="muted" id="showCounts"></span></h2>
     <div class="controls">
       <input type="text" id="showQ" placeholder="Filter episodes…" style="flex:1;min-width:150px">
+      <select id="showSort"><option value="old">Oldest episodes</option><option value="new">Newest episodes</option><option value="az">A–Z</option></select>
       <label style="margin:0;display:flex;align-items:center;gap:6px;text-transform:none;font-size:13px;cursor:pointer"><input type="checkbox" id="showUnrated" style="width:auto"> Unrated only</label>
     </div>
     <div class="rowlist" id="showList"></div>
@@ -494,9 +495,13 @@ function renderRatings(){
 /* ================= RENDER: SHOW LIST ================= */
 function renderShow(){
   var q = norm(el('showQ').value), unonly = el('showUnrated').checked;
+  var srt = el('showSort') ? el('showSort').value : 'old';
   var rated = 0, html = '', shown = 0;
-  for(var i=0;i<RW.length;i++){
-    var f = RW[i], mine = myFind(f.title, f.year);
+  var list = RW.slice();
+  if(srt==='new') list.reverse();
+  else if(srt==='az') list.sort(function(a,b){ return a.title.localeCompare(b.title); });
+  for(var i=0;i<list.length;i++){
+    var f = list[i], mine = myFind(f.title, f.year);
     if(mine) rated++;
     if(unonly && mine) continue;
     if(q && norm(f.title).indexOf(q)<0 && norm(f.director).indexOf(q)<0) continue;
@@ -1132,6 +1137,7 @@ el('wlq').addEventListener('keydown', function(e){ if(e.key==='Enter') wlSearch(
 el('pq').addEventListener('keydown', function(e){ if(e.key==='Enter') peopleSearch(); });
 el('showQ').addEventListener('input', renderShow);
 el('showUnrated').addEventListener('change', renderShow);
+el('showSort').addEventListener('change', renderShow);
 el('fRating').addEventListener('change', renderRatings);
 el('fTier').addEventListener('change', renderRatings);
 el('fSort').addEventListener('change', renderRatings);
