@@ -441,7 +441,7 @@ function tasteProfile(){
   }
   var followed = PEOPLE.map(function(p){ return p.name; }).join(', ');
   var s = 'MY FILM RATINGS (scale: All-timer > Loved > Liked > Meh > Disliked; tier = personal rank):\n' + lines.join('\n');
-  if(followed) s += '\n\nPEOPLE I FOLLOW: ' + followed;
+  if(followed) s += '\n\nPEOPLE I FOLLOW (actors/directors/writers I actively track — weight their filmographies heavily when suggesting): ' + followed;
   return s.slice(0, 9000);
 }
 function tierRank(t){ return ['Top 5','Top 10','Top 25','Top 50','Top 100','Outside Top 100'].indexOf(t)+1 || 9; }
