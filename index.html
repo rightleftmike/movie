@@ -579,6 +579,8 @@ function openMovieCard(tmdbId){
     el('cardBox').innerHTML = movieCardHTML(m);
     el('searchResults').innerHTML = '';
     window.scrollTo({ top: 0, behavior: 'smooth' });
+    var epy = m.release_date ? m.release_date.slice(0,4) : '';
+    if(rwFind(m.title, epy)) fillEpisodeBox(m.title);
   }).catch(function(e){
     el('cardBox').innerHTML = '<div class="card" style="border-color:var(--red)">⚠️ ' + esc(e.message) + '</div>';
   });
@@ -655,6 +657,7 @@ function movieCardHTML(m){
     if(parts.length) myNotes = '<hr class="gold"><h3>My Notes</h3>' + parts.join('');
   }
 
+  var epSection = onRW ? '<hr class="gold"><h3>🎙 The Episode</h3><div id="epBox" class="muted"></div>' : '';
   return '<div class="card"><div class="card-top">' + poster
     + '<div style="min-width:0;flex:1"><h2>' + esc(m.title) + '</h2>'
     + '<div class="meta">' + esc(year) + (genres ? ' · ' + esc(genres) : '') + '</div>'
@@ -664,7 +667,72 @@ function movieCardHTML(m){
     + '</div></div>'
     + chips
     + (castHtml ? '<label>Cast</label><div class="cast-strip">' + castHtml + '</div>' : '')
-    + buttons + myNotes + '</div>';
+    + buttons + epSection + myNotes + '</div>';
+}
+
+/* ================= PODCAST FEED ================= */
+var FEED = null, FEED_P = null;
+function loadFeed(){
+  if(FEED) return Promise.resolve(FEED);
+  if(FEED_P) return FEED_P;
+  FEED_P = fetch(SB_URL + '/functions/v1/app?feed=1').then(function(r){
+    if(!r.ok) throw new Error('feed HTTP ' + r.status);
+    return r.text();
+  }).then(function(xml){
+    var doc = new DOMParser().parseFromString(xml, 'text/xml');
+    var items = doc.getElementsByTagName('item');
+    var out = [];
+    for(var i=0;i<items.length;i++){
+      var it = items[i];
+      function gv(tag){ var n = it.getElementsByTagName(tag)[0]; return n ? n.textContent : ''; }
+      var enc = it.getElementsByTagName('enclosure')[0];
+      var desc = gv('description').replace(/<[^>]*>/g,' ').replace(/Learn more about your ad choices[\s\S]*$/,'').replace(/\s+/g,' ').trim();
+      out.push({ t: gv('title'), date: gv('pubDate').slice(0,16), url: enc ? enc.getAttribute('url') : '', desc: desc });
+    }
+    FEED = out;
+    return FEED;
+  });
+  return FEED_P;
+}
+function quotedTitle(s){ var m = String(s).match(/['\u2018\u201C"]([^'\u2019\u201D"]+)['\u2019\u201D"]/); return m ? m[1] : ''; }
+function findEpisodes(title){
+  var k = norm(title), out = [];
+  for(var i=0;i<FEED.length;i++){
+    var q = norm(quotedTitle(FEED[i].t));
+    if(q === k) out.push(FEED[i]);
+    else if(!q && k.length > 6 && norm(FEED[i].t).indexOf(k) >= 0) out.push(FEED[i]);
+  }
+  return out;
+}
+function spotifySearchLink(title){
+  var s = 'https://open.spotify.com/search/' + encodeURIComponent('The Rewatchables ' + title);
+  return '<a href="' + s + '" target="_blank" rel="noopener">Find the episode on Spotify \u2192</a>';
+}
+function fillEpisodeBox(title){
+  var box = el('epBox');
+  if(!box) return;
+  box.innerHTML = '<span class="spin"></span> Checking the feed\u2026';
+  loadFeed().then(function(){
+    box = el('epBox');
+    if(!box) return;
+    var eps = findEpisodes(title);
+    if(!eps.length){
+      box.innerHTML = spotifySearchLink(title) + '<div style="font-size:11.5px;margin-top:4px">The public feed only carries recent episodes \u2014 the full archive lives on Spotify.</div>';
+      return;
+    }
+    var html = '';
+    eps.slice(0,2).forEach(function(ep){
+      html += '<div style="margin-bottom:10px"><div style="font-size:13.5px;font-weight:500;color:var(--txt)">' + esc(ep.t) + '</div>'
+        + '<div style="font-size:11.5px;margin:2px 0 6px">' + esc(ep.date) + '</div>'
+        + (ep.url ? '<audio controls preload="none" style="width:100%" src="' + esc(ep.url) + '"></audio>' : spotifySearchLink(title))
+        + (ep.desc ? '<details style="margin-top:6px"><summary style="cursor:pointer;font-size:12px">Episode notes</summary><p style="font-size:12.5px;margin-top:6px">' + esc(ep.desc.slice(0,700)) + '</p></details>' : '')
+        + '</div>';
+    });
+    box.innerHTML = html;
+  }).catch(function(e){
+    box = el('epBox');
+    if(box) box.innerHTML = '\u26A0\uFE0F Feed unavailable (' + esc(e.message) + ') \u00B7 ' + spotifySearchLink(title);
+  });
 }
 
 /* ================= SEARCH ================= */
