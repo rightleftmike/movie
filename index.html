@@ -302,12 +302,12 @@ var SB_KEY = 'sb_publishable_NnuHKulCrQ1xfiy19jLjtA_goENmK-c';
 var SUPA = (window.supabase && window.supabase.createClient)
   ? window.supabase.createClient(SB_URL, SB_KEY, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } })
   : null;
-var ME = null, PROFILE = null, BOOTED = false, AI_TRIAL_REMAINING = null;
+var ME = null, PROFILE = null, BOOTED = false;
 var SHEET_ID = '13KsNb1SxA7DYYQAzhaYxj_qKX0PXV1PXyKAZ7cEapRc';
 var SHEET_TAB = 'episode list';
 var TMDB_DEFAULT = '9f6a7cc8ad0b39dcb6381c44a16761cc';
 var IMG = 'https://image.tmdb.org/t/p/';
-var FREE_TRIAL_CALLS = 5;
+var TRIAL_DAYS = 3;
 // Stripe Payment Links — filled in once the Stripe product/prices exist.
 var STRIPE_LINK_MONTHLY = '';
 var STRIPE_LINK_ANNUAL = '';
@@ -395,16 +395,17 @@ function renderAiPlanStatus(){
     return;
   }
   if(upBox) upBox.style.display = 'block';
-  if(AI_TRIAL_REMAINING !== null){
-    box.textContent = 'Free plan — ' + AI_TRIAL_REMAINING + ' of ' + FREE_TRIAL_CALLS + ' trial AI calls left';
+  // Trial is time-based (TRIAL_DAYS from signup) — trial_ends_at comes straight off the profile
+  // row we already have, so no extra round-trip is needed to render this.
+  var trialEnd = PROFILE.trial_ends_at ? new Date(PROFILE.trial_ends_at)
+    : new Date(new Date(PROFILE.created_at).getTime() + TRIAL_DAYS*24*60*60*1000);
+  var msLeft = trialEnd - new Date();
+  if(msLeft <= 0){
+    box.innerHTML = '<span style="color:var(--red)">Free trial ended</span> — upgrade to keep using AI features';
     return;
   }
-  box.innerHTML = '<span class="spin"></span> Checking free trial…';
-  SUPA.from('ai_usage').select('id', { count:'exact', head:true }).then(function(res){
-    if(res.error){ box.innerHTML = '<span style="color:var(--red)">⚠️ ' + esc(res.error.message) + '</span>'; return; }
-    AI_TRIAL_REMAINING = Math.max(0, FREE_TRIAL_CALLS - (res.count || 0));
-    box.textContent = 'Free plan — ' + AI_TRIAL_REMAINING + ' of ' + FREE_TRIAL_CALLS + ' trial AI calls left';
-  }).catch(function(e){ box.innerHTML = '<span style="color:var(--red)">⚠️ ' + esc(e.message) + '</span>'; });
+  var daysLeft = Math.max(1, Math.ceil(msLeft / (24*60*60*1000)));
+  box.textContent = 'Free trial — ' + daysLeft + ' day' + (daysLeft===1?'':'s') + ' left';
 }
 
 /* ================= LOOKUPS ================= */
@@ -685,7 +686,6 @@ function askClaude(prompt, maxTokens, feature){
         err.upgradeRequired = !!j.upgrade_required;
         throw err;
       }
-      if(typeof j.trial_remaining === 'number'){ AI_TRIAL_REMAINING = j.trial_remaining; renderAiPlanStatus(); }
       return j.text || '';
     });
   });
@@ -1468,7 +1468,6 @@ function refreshAiPlanFromCloud(){
   if(!SUPA || !ME) { renderAiPlanStatus(); return; }
   SUPA.from('profiles').select('*').eq('id', ME.id).maybeSingle().then(function(res){
     if(!res.error && res.data) PROFILE = res.data;
-    AI_TRIAL_REMAINING = null;
     renderAiPlanStatus();
   }).catch(function(){ renderAiPlanStatus(); });
 }
