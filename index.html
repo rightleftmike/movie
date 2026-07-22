@@ -245,8 +245,9 @@ body.preauth header, body.preauth #appWrap{display:none!important}
     <label>AI features (Suggest, Refine, Watch Tonight)</label>
     <div class="kv" id="aiPlanStatus">Checking…</div>
     <div id="upgradeBox" style="margin-top:8px;display:none">
+      <div class="muted" style="font-size:12.5px;line-height:1.55;margin-bottom:8px">Upgrading gets you: a much higher daily AI limit (100/day vs 20/day on the trial), ✨ <b>Suggest</b> — picks tailored to your actual ratings and notes, ✎ <b>Refine notes</b> — AI-polished versions of your rough thoughts, and 🍿 <b>Watch Tonight</b> — one pick, weighed for the time and day.</div>
       <button class="btn btn-gold btn-sm" data-action="upgrademonthly">⭐ Upgrade — $2.99/mo</button>
-      <button class="btn btn-outline btn-sm" data-action="upgradeannual" style="margin-left:6px">⭐ Upgrade — $24/yr</button>
+      <button class="btn btn-outline btn-sm" data-action="upgradeannual" style="margin-left:6px">⭐ Upgrade — $19.99/yr</button>
     </div>
     <label>TMDB API key</label>
     <input type="text" id="setTmdb">
@@ -370,9 +371,14 @@ function tmdbKey(){ return localStorage.getItem('tmdb_key') || TMDB_DEFAULT; }
 function aiErrorHTML(e){
   var html = '<p style="color:var(--red);margin-top:10px">⚠️ ' + esc(e.message) + '</p>';
   if(e.upgradeRequired){
-    html += '<div style="display:flex;gap:8px;margin-top:6px">'
+    // Trial-ended is the one AI error worth pitching, not just apologizing for -- show what
+    // upgrading actually gets them instead of a bare error + buttons.
+    html += '<div class="card" style="margin-top:8px;padding:12px">'
+      + '<div style="font-weight:600;margin-bottom:4px">⭐ What upgrading unlocks</div>'
+      + '<div class="muted" style="font-size:12.5px;line-height:1.55;margin-bottom:10px">A much higher daily AI limit (100/day vs 20/day on the trial), ✨ <b>Suggest</b> — picks tailored to your actual ratings and notes, ✎ <b>Refine notes</b> — AI-polished versions of your rough thoughts, and 🍿 <b>Watch Tonight</b> — one pick, weighed for the time and day.</div>'
+      + '<div style="display:flex;gap:8px;flex-wrap:wrap">'
       + '<button class="btn btn-gold btn-sm" data-action="upgrademonthly">⭐ $2.99/mo</button>'
-      + '<button class="btn btn-outline btn-sm" data-action="upgradeannual">⭐ $19.99/yr</button></div>';
+      + '<button class="btn btn-outline btn-sm" data-action="upgradeannual">⭐ $19.99/yr</button></div></div>';
   }
   return html;
 }
