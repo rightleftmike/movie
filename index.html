@@ -107,7 +107,15 @@ label{font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:.0
 .dr-stats b{color:var(--gold);font-size:16px;font-family:'Bebas Neue'}
 .modal-veil{position:fixed;inset:0;background:#000c;z-index:80;display:none;overflow-y:auto;padding:20px 10px 40px}
 .modal-veil.open{display:block}
-.modal{max-width:600px;margin:0 auto;background:var(--panel);border:1px solid var(--gold-dim);border-radius:14px;padding:18px}
+.modal{max-width:600px;margin:0 auto;background:var(--panel);border:1px solid var(--gold-dim);border-radius:14px;padding:18px;position:relative}
+.modal-x{position:absolute;top:10px;right:10px;background:none;border:none;color:var(--dim);font-size:22px;line-height:1;cursor:pointer;padding:5px 9px;border-radius:8px}
+.modal-x:hover{color:var(--txt);background:var(--panel2)}
+.ta-wrap{position:relative}
+.ta-wrap textarea{padding-right:40px}
+.mic-btn{position:absolute;bottom:7px;right:7px;width:28px;height:28px;background:var(--panel2);border:1px solid var(--gold-dim);color:var(--dim);border-radius:7px;cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center}
+.mic-btn:hover{color:var(--gold)}
+.mic-btn.listening{color:var(--red);border-color:var(--red);animation:micpulse 1s ease-in-out infinite}
+@keyframes micpulse{0%,100%{opacity:1}50%{opacity:.45}}
 .formgrid{display:grid;grid-template-columns:1fr 1fr;gap:0 12px}
 .toast-box{position:fixed;bottom:14px;left:50%;transform:translateX(-50%);z-index:99;display:flex;flex-direction:column;gap:6px;width:min(440px,92vw)}
 .toast{padding:11px 15px;border-radius:10px;font-size:13.5px;background:var(--panel2);border:1px solid var(--line);box-shadow:0 8px 24px #000b}
@@ -1199,17 +1207,18 @@ function renderRatingForm(keepVals){
   }
   var followSection = followChips ? '<label>People to follow (from this film)</label><div class="chips">' + followChips + '</div>' : '';
 
-  var html = '<h2>' + (FORM.existing ? 'Edit' : 'Rate') + ': ' + esc(FORM.title) + ' <span class="muted">(' + esc(FORM.year||'?') + ')</span></h2>'
+  var html = '<button class="modal-x" data-action="closemodal" title="Close">✕</button>'
+    + '<h2>' + (FORM.existing ? 'Edit' : 'Rate') + ': ' + esc(FORM.title) + ' <span class="muted">(' + esc(FORM.year||'?') + ')</span></h2>'
     + '<div class="formgrid">'
     + '<div><label>Rating</label><select id="rf_rating">' + ratingOpts(v('rating', e.rating) || 'Loved') + '</select></div>'
     + '<div><label>Would rewatch?</label><select id="rf_rewatch"><option' + ((v('rewatch', e.rewatch)||'Yes')==='Yes'?' selected':'') + '>Yes</option><option' + (v('rewatch', e.rewatch)==='No'?' selected':'') + '>No</option></select></div>'
     + '<div><label>Times seen</label><input type="number" id="rf_times" min="0" value="' + esc(v('times_seen', e.times_seen)) + '"></div>'
     + '<div><label>First seen (year)</label><input type="number" id="rf_first" value="' + esc(v('first_seen_year', e.first_seen_year)) + '"></div>'
     + '</div>'
-    + '<label>What stuck with me</label><textarea id="rf_vibe" placeholder="Vibe, what pulled you in, a favorite scene — whatever comes to mind">' + esc(v('vibe', e.vibe)) + '</textarea>'
-    + '<label>Standout performance</label><textarea id="rf_actor">' + esc(v('fav_actor', e.fav_actor)) + '</textarea>' + castChips
-    + '<label>What didn’t click</label><textarea id="rf_didnt">' + esc(v('didnt_click', e.didnt_click)) + '</textarea>'
-    + '<label>Other notes</label><textarea id="rf_notes">' + esc(v('notes', e.notes)) + '</textarea>'
+    + taBlock('rf_vibe', 'What stuck with me', v('vibe', e.vibe), 'Vibe, what pulled you in, a favorite scene — whatever comes to mind')
+    + taBlock('rf_actor', 'Standout performance', v('fav_actor', e.fav_actor)) + castChips
+    + taBlock('rf_didnt', 'What didn’t click', v('didnt_click', e.didnt_click))
+    + taBlock('rf_notes', 'Other notes', v('notes', e.notes))
     + followSection
     + '<div id="refineBox"></div>'
     + '<div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap">'
@@ -1218,6 +1227,17 @@ function renderRatingForm(keepVals){
     + '<button class="btn" data-action="closemodal">Cancel</button>'
     + '</div>';
   el('modal').innerHTML = html;
+  // Baseline snapshot for the dirty check on close -- only captured once (on the very first
+  // render). A later re-render with keepVals=true (e.g. once TMDB metadata arrives async) just
+  // repaints whatever the user already has in the fields, so re-snapshotting then would silently
+  // erase a real in-progress edit's dirty flag.
+  if(FORM.snapshot == null) FORM.snapshot = JSON.stringify(collectForm());
+  wireMicButtons();
+}
+function taBlock(id, label, value, placeholder){
+  var ph = placeholder ? ' placeholder="' + esc(placeholder) + '"' : '';
+  return '<label>' + label + '</label><div class="ta-wrap"><textarea id="' + id + '"' + ph + '>' + esc(value) + '</textarea>'
+    + '<button type="button" class="mic-btn" data-action="mic" data-target="' + id + '" title="Speak this note">🎤</button></div>';
 }
 function collectForm(){
   function gv(id){ var x = el(id); return x ? x.value.trim() : ''; }
@@ -1247,7 +1267,7 @@ function saveRating(){
   var optimistic = FORM.existing ? Object.assign({}, FORM.existing, d) : Object.assign({ id:'tmp' }, d);
   if(FORM.existing){ MY = MY.map(function(r){ return r.id===FORM.existing.id ? optimistic : r; }); }
   else MY.unshift(optimistic);
-  closeModal(); refreshCounts(); renderRatings(); renderShow();
+  stopDictation(); closeModal(); refreshCounts(); renderRatings(); renderShow();
   toast('Saved: ' + d.title, 'ok');
   req.then(function(res){
     if(res.error) throw new Error(res.error.message);
@@ -1285,7 +1305,61 @@ function refineNotes(){
   }).catch(function(e){ el('refineBox').innerHTML = aiErrorHTML(e); });
 }
 var REFINE_FIELD_IDS = { vibe:'rf_vibe', fav_actor:'rf_actor', didnt_click:'rf_didnt', notes:'rf_notes' };
+function formIsDirty(){
+  return !!(FORM && FORM.snapshot != null && JSON.stringify(collectForm()) !== FORM.snapshot);
+}
+function attemptCloseModal(){
+  if(formIsDirty() && !confirm('Discard unsaved changes to this rating?')) return;
+  stopDictation();
+  closeModal();
+}
 function closeModal(){ el('modalVeil').classList.remove('open'); FORM = null; }
+
+/* ================= VOICE DICTATION (Web Speech API) ================= */
+var SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+var DICTATION = null; // { rec, targetId, btn, baseValue }
+function stopDictation(){
+  if(DICTATION){ try{ DICTATION.rec.stop(); }catch(_){} }
+}
+function wireMicButtons(){
+  if(!SpeechRec){
+    // No browser support (e.g. Firefox) -- swap every mic button for a visible, explained disabled state
+    // instead of a button that silently does nothing when clicked.
+    document.querySelectorAll('.mic-btn').forEach(function(b){
+      b.disabled = true; b.style.opacity = '.35'; b.style.cursor = 'not-allowed';
+      b.title = 'Voice dictation isn’t supported in this browser (try Chrome, Edge, or Safari)';
+    });
+  }
+}
+function toggleDictation(targetId, btn){
+  if(!SpeechRec) return;
+  if(DICTATION && DICTATION.targetId === targetId){ DICTATION.rec.stop(); return; }
+  if(DICTATION) DICTATION.rec.stop();
+  var box = el(targetId);
+  if(!box) return;
+  var rec = new SpeechRec();
+  rec.lang = 'en-US'; rec.continuous = true; rec.interimResults = true;
+  var baseValue = box.value;
+  DICTATION = { rec:rec, targetId:targetId, btn:btn, baseValue:baseValue };
+  btn.classList.add('listening');
+  rec.onresult = function(ev){
+    var finalTxt = '', interimTxt = '';
+    for(var i=0; i<ev.results.length; i++){
+      var piece = ev.results[i][0].transcript;
+      if(ev.results[i].isFinal) finalTxt += piece; else interimTxt += piece;
+    }
+    var joinedBase = baseValue && !/\s$/.test(baseValue) ? baseValue + ' ' : baseValue;
+    box.value = joinedBase + finalTxt + interimTxt;
+  };
+  rec.onerror = function(ev){
+    toast('⚠️ Voice input error: ' + (ev.error || 'unknown'), 'err');
+  };
+  rec.onend = function(){
+    btn.classList.remove('listening');
+    if(DICTATION && DICTATION.targetId === targetId) DICTATION = null;
+  };
+  try{ rec.start(); }catch(e){ toast('⚠️ Could not start voice input', 'err'); btn.classList.remove('listening'); DICTATION = null; }
+}
 
 /* ================= FOLLOW / WATCHLIST OPS ================= */
 function followPerson(name, from){
@@ -1482,7 +1556,8 @@ document.addEventListener('click', function(ev){
     else if(r) openPersonByName(r.name);
   }
   else if(action==='closedrawer') closeDrawer();
-  else if(action==='closemodal') closeModal();
+  else if(action==='closemodal') attemptCloseModal();
+  else if(action==='mic') toggleDictation(t.getAttribute('data-target'), t);
   else if(action==='rate'){
     if(r && r.type==='ratemovie'){ var y=(r.movie.release_date||'').slice(0,4); openRatingForm({ title:r.movie.title, year:y?Number(y):null, movie:r.movie }); }
     else if(r) openRatingForm({ title:r.title, year:r.year });
