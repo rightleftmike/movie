@@ -235,8 +235,9 @@ body.preauth header, body.preauth #appWrap{display:none!important}
     <h2>Settings</h2>
     <label>Account</label>
     <div class="kv" id="acctStatus">Not signed in</div>
-    <div id="acctName" class="kv" style="display:none"></div>
-    <button class="btn btn-outline btn-sm" data-action="signout" style="margin-top:6px">Sign out</button>
+    <label>Display name (your Screening Room)</label>
+    <div style="display:flex;gap:8px"><input type="text" id="setName" placeholder="Your name"><button class="btn btn-outline" data-action="savename">Save</button></div>
+    <button class="btn btn-outline btn-sm" data-action="signout" style="margin-top:10px">Sign out</button>
     <hr class="gold">
     <label>Anthropic API key (stored only in this browser)</label>
     <div style="display:flex;gap:8px"><input type="text" id="setAnthropic" placeholder="sk-ant-…"><button class="btn btn-outline" data-action="savekey">Save</button></div>
@@ -470,8 +471,18 @@ function renderUserBox(){
   el('userAvatar').innerHTML = avatar ? '<img src="' + esc(avatar) + '" alt="">' : esc(initial);
   el('userName').textContent = displayName();
   el('acctStatus').innerHTML = '<span style="color:var(--green)">● Signed in</span> — ' + esc(ME.email || '');
-  var an = el('acctName');
-  if(an){ an.style.display = 'block'; an.textContent = 'Screening room: ' + displayName(); }
+  if(el('setName')) el('setName').value = displayName();
+}
+function saveDisplayName(){
+  var name = el('setName').value.trim();
+  if(!name){ toast('Enter a name first', 'err'); return; }
+  if(!ME || !SUPA){ toast('Not signed in', 'err'); return; }
+  SUPA.from('profiles').upsert({ id: ME.id, display_name: name }).select().then(function(res){
+    if(res.error){ toast('⚠️ ' + res.error.message, 'err'); return; }
+    PROFILE = (res.data && res.data[0]) ? res.data[0] : { id: ME.id, display_name: name };
+    SUPA.auth.updateUser({ data: { display_name: name } });
+    setSubtitle(); renderUserBox(); toast('Name updated', 'ok');
+  }).catch(function(e){ toast('⚠️ ' + e.message, 'err'); });
 }
 function enterApp(){
   hideBoot();
@@ -1438,6 +1449,7 @@ document.addEventListener('click', function(ev){
   else if(action==='google') signInGoogle();
   else if(action==='signout') signOut();
   else if(action==='saveprofile') saveProfile();
+  else if(action==='savename') saveDisplayName();
 });
 el('q').addEventListener('input', updateAC);
 el('q').addEventListener('keydown', function(e){ if(e.key==='Enter') doSearch(); });
