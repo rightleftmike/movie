@@ -193,9 +193,9 @@ body.preauth header, body.preauth #appWrap{display:none!important}
   <div class="panel" id="p-suggest">
     <h2>What should I watch?</h2>
     <div class="seg">
-      <div class="chip sel" data-action="sugmode" data-mode="general">Anywhere</div>
+      <div class="chip sel" data-action="sugmode" data-mode="general">All-Rewatchables</div>
       <div class="chip" data-action="sugmode" data-mode="show">Unwatched Rewatchables</div>
-      <div class="chip" data-action="sugmode" data-mode="beyond">Beyond the show</div>
+      <div class="chip" data-action="sugmode" data-mode="beyond">Beyond Rewatchables</div>
     </div>
     <button class="btn btn-gold" data-action="suggest">✨ Get suggestions</button>
     <div id="sugOut"></div>
@@ -720,12 +720,12 @@ function tierRank(t){ return ['Top 5','Top 10','Top 25','Top 50','Top 100','Outs
 var RATING_STARS = { 'All-timer':5, 'Loved':4, 'Liked':3, 'Meh':2, 'Disliked':1 };
 function starsPlain(ratingText){
   var n = RATING_STARS[ratingText] || 0;
-  return n ? new Array(n+1).join('★') : (ratingText||'');
+  return n ? (ratingText + ' | ' + new Array(n+1).join('★')) : (ratingText||'');
 }
 function starsFor(ratingText){
   var n = RATING_STARS[ratingText] || 0;
   if(!n) return esc(ratingText||'');
-  return '<span class="stars" title="' + esc(ratingText) + '">' + starsPlain(ratingText) + '</span>';
+  return esc(ratingText) + ' <span class="stars">| ' + new Array(n+1).join('★') + '</span>';
 }
 
 /* ================= RENDER: COUNTS/STATS ================= */
