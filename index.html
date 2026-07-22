@@ -142,11 +142,6 @@ body.preauth header, body.preauth #appWrap{display:none!important}
 .auth-sep{color:var(--dim);font-size:11px;letter-spacing:.14em;text-transform:uppercase;margin:16px 0 4px}
 .auth-msg{font-size:13px;margin-top:14px;min-height:18px}
 .auth-foot{color:var(--dim);font-size:11px;margin-top:18px;line-height:1.5}
-.userbox{display:flex;align-items:center;gap:8px}
-.userbox .uav{width:30px;height:30px;border-radius:50%;background:var(--panel2);border:1px solid var(--gold-dim);overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:14px;color:var(--gold);font-weight:700;flex-shrink:0}
-.userbox .uav img{width:100%;height:100%;object-fit:cover}
-.userbox .uname{font-size:13px;color:var(--txt);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-@media(max-width:680px){.userbox .uname{display:none}}
 </style>
 </head>
 <body class="preauth">
@@ -159,9 +154,6 @@ body.preauth header, body.preauth #appWrap{display:none!important}
       <div class="ac" id="ac" style="display:none"></div>
     </div>
     <button class="btn btn-gold" data-action="tonight">🍿 Watch Tonight</button>
-    <div class="userbox" id="userBox" style="display:none">
-      <button class="btn btn-sm btn-outline" data-action="signout">Sign out</button>
-    </div>
   </div>
   <div class="tabs" id="tabs">
     <div class="tab on" data-action="tab" data-tab="ratings">⭐ My Ratings <span class="count" id="cRatings">0</span></div>
@@ -192,7 +184,7 @@ body.preauth header, body.preauth #appWrap{display:none!important}
   <div class="panel" id="p-suggest">
     <h2>What should I watch?</h2>
     <div class="seg">
-      <div class="chip sel" data-action="sugmode" data-mode="general">General</div>
+      <div class="chip sel" data-action="sugmode" data-mode="general">Anywhere</div>
       <div class="chip" data-action="sugmode" data-mode="show">Unwatched Rewatchables</div>
       <div class="chip" data-action="sugmode" data-mode="beyond">Beyond the show</div>
     </div>
@@ -510,10 +502,9 @@ function setSubtitle(){
   el('subTitle').textContent = n + '’s Screening Room';
 }
 function renderUserBox(){
-  var box = el('userBox');
-  if(!box || !ME) return;
-  box.style.display = 'flex';
-  el('acctStatus').innerHTML = '<span style="color:var(--green)">● Signed in</span> — ' + esc(ME.email || '');
+  // Account status/name now live only in Settings -> Account (no header chip anymore).
+  if(!ME) return;
+  if(el('acctStatus')) el('acctStatus').innerHTML = '<span style="color:var(--green)">● Signed in</span> — ' + esc(ME.email || '');
   if(el('setName')) el('setName').value = displayName();
 }
 function saveDisplayName(){
