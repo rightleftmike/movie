@@ -698,8 +698,7 @@ function tasteProfile(){
     r = sorted[i];
     var l = r.title + ' (' + (r.year||'?') + ') — ' + r.rating + (r.tier ? ', ' + r.tier : '') + (r.times_seen ? ', seen ' + r.times_seen + 'x' : '');
     var notes = [];
-    if(r.vibe) notes.push('vibe: ' + r.vibe);
-    if(r.pulled_in) notes.push('pulled in by: ' + r.pulled_in);
+    if(r.vibe) notes.push('vibe/what stuck: ' + r.vibe);
     if(r.fav_actor) notes.push('standout: ' + r.fav_actor);
     if(r.didnt_click) notes.push('didn’t click: ' + r.didnt_click);
     if(notes.length) l += ' | ' + notes.join(' | ');
@@ -920,10 +919,8 @@ function movieCardHTML(m){
   var myNotes = '';
   if(mine){
     var parts = [];
-    if(mine.vibe) parts.push('<div class="kv"><b>Vibe:</b> ' + esc(mine.vibe) + '</div>');
-    if(mine.pulled_in) parts.push('<div class="kv"><b>Pulled me in:</b> ' + esc(mine.pulled_in) + '</div>');
+    if(mine.vibe) parts.push('<div class="kv"><b>What stuck with me:</b> ' + esc(mine.vibe) + '</div>');
     if(mine.fav_actor) parts.push('<div class="kv"><b>Standout:</b> ' + esc(mine.fav_actor) + '</div>');
-    if(mine.fav_scene) parts.push('<div class="kv"><b>Favorite scene:</b> ' + esc(mine.fav_scene) + '</div>');
     if(mine.didnt_click) parts.push('<div class="kv"><b>Didn’t click:</b> ' + esc(mine.didnt_click) + '</div>');
     if(mine.notes) parts.push('<div class="kv"><b>Notes:</b> ' + esc(mine.notes) + '</div>');
     if(mine.times_seen) parts.push('<div class="kv"><b>Times seen:</b> ' + esc(mine.times_seen) + (mine.first_seen_year ? ' (first: ' + esc(mine.first_seen_year) + ')' : '') + '</div>');
@@ -1214,15 +1211,12 @@ function renderRatingForm(keepVals){
   var html = '<h2>' + (FORM.existing ? 'Edit' : 'Rate') + ': ' + esc(FORM.title) + ' <span class="muted">(' + esc(FORM.year||'?') + ')</span></h2>'
     + '<div class="formgrid">'
     + '<div><label>Rating</label><select id="rf_rating">' + ratingOpts(v('rating', e.rating) || 'Loved') + '</select></div>'
-    + '<div><label>Rank tier</label><select id="rf_tier">' + tierOpts(v('tier', e.tier)) + '</select></div>'
     + '<div><label>Would rewatch?</label><select id="rf_rewatch"><option' + ((v('rewatch', e.rewatch)||'Yes')==='Yes'?' selected':'') + '>Yes</option><option' + (v('rewatch', e.rewatch)==='No'?' selected':'') + '>No</option></select></div>'
     + '<div><label>Times seen</label><input type="number" id="rf_times" min="0" value="' + esc(v('times_seen', e.times_seen)) + '"></div>'
     + '<div><label>First seen (year)</label><input type="number" id="rf_first" value="' + esc(v('first_seen_year', e.first_seen_year)) + '"></div>'
     + '</div>'
-    + '<label>The vibe</label><textarea id="rf_vibe">' + esc(v('vibe', e.vibe)) + '</textarea>'
-    + '<label>What pulled me in</label><textarea id="rf_pulled">' + esc(v('pulled_in', e.pulled_in)) + '</textarea>'
+    + '<label>What stuck with me</label><textarea id="rf_vibe" placeholder="Vibe, what pulled you in, a favorite scene — whatever comes to mind">' + esc(v('vibe', e.vibe)) + '</textarea>'
     + '<label>Standout performance</label><textarea id="rf_actor">' + esc(v('fav_actor', e.fav_actor)) + '</textarea>' + castChips
-    + '<label>Favorite scene</label><textarea id="rf_scene">' + esc(v('fav_scene', e.fav_scene)) + '</textarea>'
     + '<label>What didn’t click</label><textarea id="rf_didnt">' + esc(v('didnt_click', e.didnt_click)) + '</textarea>'
     + '<label>Other notes</label><textarea id="rf_notes">' + esc(v('notes', e.notes)) + '</textarea>'
     + followSection
@@ -1236,12 +1230,16 @@ function renderRatingForm(keepVals){
 }
 function collectForm(){
   function gv(id){ var x = el(id); return x ? x.value.trim() : ''; }
+  // tier/pulled_in/fav_scene are intentionally omitted here (not just set to null) -- those
+  // fields were dropped from the form, but existing ratings may still have historical values in
+  // those columns, and omitting the key means a Supabase .update() leaves them untouched instead
+  // of wiping them out on every unrelated edit.
   return {
-    rating: gv('rf_rating'), tier: gv('rf_tier') || null, rewatch: gv('rf_rewatch'),
+    rating: gv('rf_rating'), rewatch: gv('rf_rewatch'),
     times_seen: gv('rf_times') ? parseInt(gv('rf_times'),10) : null,
     first_seen_year: gv('rf_first') ? parseInt(gv('rf_first'),10) : null,
-    vibe: gv('rf_vibe') || null, pulled_in: gv('rf_pulled') || null, fav_actor: gv('rf_actor') || null,
-    fav_scene: gv('rf_scene') || null, didnt_click: gv('rf_didnt') || null, notes: gv('rf_notes') || null
+    vibe: gv('rf_vibe') || null, fav_actor: gv('rf_actor') || null,
+    didnt_click: gv('rf_didnt') || null, notes: gv('rf_notes') || null
   };
 }
 function saveRating(){
@@ -1273,7 +1271,7 @@ function saveRating(){
 }
 function refineNotes(){
   var d = collectForm();
-  var fields = { vibe:d.vibe, pulled_in:d.pulled_in, fav_actor:d.fav_actor, fav_scene:d.fav_scene, didnt_click:d.didnt_click, notes:d.notes };
+  var fields = { vibe:d.vibe, fav_actor:d.fav_actor, didnt_click:d.didnt_click, notes:d.notes };
   var any = Object.keys(fields).some(function(k){ return fields[k]; });
   if(!any){ toast('Write some rough notes first', 'err'); return; }
   el('refineBox').innerHTML = '<p class="muted" style="margin-top:10px"><span class="spin"></span> Refining…</p>';
@@ -1282,7 +1280,7 @@ function refineNotes(){
     var out = extractJSON(text);
     if(!out) throw new Error('Could not parse refinement');
     FORM.refined = out;
-    var labels = { vibe:'Vibe', pulled_in:'Pulled me in', fav_actor:'Standout', fav_scene:'Favorite scene', didnt_click:'Didn’t click', notes:'Notes' };
+    var labels = { vibe:'What stuck with me', fav_actor:'Standout', didnt_click:'Didn’t click', notes:'Notes' };
     var html = '<hr class="gold"><h3>Original vs Refined — tap a refined cell to use it</h3>';
     Object.keys(labels).forEach(function(k){
       if(!fields[k] || !out[k]) return;
@@ -1295,7 +1293,7 @@ function refineNotes(){
     el('refineBox').innerHTML = html;
   }).catch(function(e){ el('refineBox').innerHTML = aiErrorHTML(e); });
 }
-var REFINE_FIELD_IDS = { vibe:'rf_vibe', pulled_in:'rf_pulled', fav_actor:'rf_actor', fav_scene:'rf_scene', didnt_click:'rf_didnt', notes:'rf_notes' };
+var REFINE_FIELD_IDS = { vibe:'rf_vibe', fav_actor:'rf_actor', didnt_click:'rf_didnt', notes:'rf_notes' };
 function closeModal(){ el('modalVeil').classList.remove('open'); FORM = null; }
 
 /* ================= FOLLOW / WATCHLIST OPS ================= */
@@ -1502,7 +1500,19 @@ document.addEventListener('click', function(ev){
   else if(action==='refine') refineNotes();
   else if(action==='userefined'){ var f=REFINE_FIELD_IDS[r.field]; if(FORM && FORM.refined && el(f)){ el(f).value = FORM.refined[r.field]||''; t.style.borderColor='var(--green)'; } }
   else if(action==='userefinedall'){ if(FORM && FORM.refined){ Object.keys(REFINE_FIELD_IDS).forEach(function(k){ if(FORM.refined[k] && el(REFINE_FIELD_IDS[k]) && el(REFINE_FIELD_IDS[k]).value) el(REFINE_FIELD_IDS[k]).value = FORM.refined[k]; }); toast('Applied refined notes','ok'); } }
-  else if(action==='castchip'){ var box = el('rf_actor'); if(box){ box.value = box.value ? box.value + ', ' + r.name : r.name; } }
+  else if(action==='castchip'){
+    var box = el('rf_actor'); if(box){ box.value = box.value ? box.value + ', ' + r.name : r.name; }
+    // Naming someone a standout performance also puts them forward to follow -- one tap does
+    // both. If they're already in the People-to-follow chips (below), sync that chip's look too;
+    // if they're outside that shortlist (e.g. deep cast), they're still followed on Save.
+    if(FORM && !FORM.follow[r.name]){
+      FORM.follow[r.name] = 1;
+      var followChipsEls = document.querySelectorAll('[data-action="togglefollow"]');
+      for(var fi=0; fi<followChipsEls.length; fi++){
+        if(followChipsEls[fi].textContent.trim() === r.name){ followChipsEls[fi].classList.add('sel'); break; }
+      }
+    }
+  }
   else if(action==='togglefollow'){ if(FORM){ if(FORM.follow[r.name]) delete FORM.follow[r.name]; else FORM.follow[r.name]=1; t.classList.toggle('sel'); } }
   else if(action==='wladd'){ addWatchlist(r.title, r.year, r.source); }
   else if(action==='wladdclear'){ addWatchlist(r.title, r.year, r.source); el('wlSearchOut').innerHTML=''; el('wlq').value=''; }
