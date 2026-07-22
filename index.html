@@ -1437,7 +1437,12 @@ function runSuggest(){
     prompt = profile + '\n\nFILMS ALREADY ON THE REWATCHABLES PODCAST (avoid these):\n' + showTitles
       + '\n\nSuggest 5 films NOT on that list and NOT in my ratings that I would love. Reasons must reference my actual rated films/notes.';
   } else {
-    prompt = profile + '\n\nSuggest 5 films (not already in my ratings) I am most likely to love. Reasons must reference my actual rated films/notes.';
+    // "All-Rewatchables" -- the full episode list, watched AND unwatched (unlike 'show' mode,
+    // which is unrated-only). Restricted to RW, same as the other two modes; this used to be
+    // wide open with no restriction at all, which didn't match the "All-Rewatchables" label.
+    var allShow = RW.map(function(f){ return f.title + ' (' + f.year + ', ' + f.director + ')'; }).join('; ').slice(0,12000);
+    prompt = profile + '\n\nALL REWATCHABLES EPISODES (some I have already rated, some not):\n' + allShow
+      + '\n\nFrom the list above ONLY, pick the 5 films I am most likely to love -- including a great rewatch of something I already rated highly if it fits, not just unrated ones. Reasons must reference my actual rated films/notes.';
   }
   prompt += '\n\nReturn ONLY a JSON array: [{"title":"…","year":1999,"reason":"…"}]';
   askClaude(prompt, 1400, 'suggest').then(function(text){
@@ -1450,6 +1455,13 @@ function runSuggest(){
       RW.forEach(function(f){ onShow[norm(f.title)] = true; });
       arr = arr.filter(function(s){ return !onShow[norm(s.title)]; });
       if(!arr.length) throw new Error('AI kept suggesting films already on the show — try again');
+    } else if(SUG_MODE === 'general'){
+      // Same reliability issue in the other direction -- All-Rewatchables must only ever return
+      // films actually on the show, so cross-check against RW instead of trusting the prompt.
+      var onShowG = {};
+      RW.forEach(function(f){ onShowG[norm(f.title)] = true; });
+      arr = arr.filter(function(s){ return onShowG[norm(s.title)]; });
+      if(!arr.length) throw new Error('AI suggested films off the Rewatchables list — try again');
     }
     var html = '';
     arr.forEach(function(s){
