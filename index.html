@@ -239,8 +239,12 @@ body.preauth header, body.preauth #appWrap{display:none!important}
     <div style="display:flex;gap:8px"><input type="text" id="setName" placeholder="Your name"><button class="btn btn-outline" data-action="savename">Save</button></div>
     <button class="btn btn-outline btn-sm" data-action="signout" style="margin-top:10px">Sign out</button>
     <hr class="gold">
-    <label>Anthropic API key (stored only in this browser)</label>
-    <div style="display:flex;gap:8px"><input type="text" id="setAnthropic" placeholder="sk-ant-…"><button class="btn btn-outline" data-action="savekey">Save</button></div>
+    <label>AI features (Suggest, Refine, Watch Tonight)</label>
+    <div class="kv" id="aiPlanStatus">Checking…</div>
+    <div id="upgradeBox" style="margin-top:8px;display:none">
+      <button class="btn btn-gold btn-sm" data-action="upgrademonthly">⭐ Upgrade — $2.99/mo</button>
+      <button class="btn btn-outline btn-sm" data-action="upgradeannual" style="margin-left:6px">⭐ Upgrade — $24/yr</button>
+    </div>
     <label>TMDB API key</label>
     <input type="text" id="setTmdb">
     <label>Supabase</label>
@@ -298,12 +302,15 @@ var SB_KEY = 'sb_publishable_NnuHKulCrQ1xfiy19jLjtA_goENmK-c';
 var SUPA = (window.supabase && window.supabase.createClient)
   ? window.supabase.createClient(SB_URL, SB_KEY, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } })
   : null;
-var ME = null, PROFILE = null, BOOTED = false;
+var ME = null, PROFILE = null, BOOTED = false, AI_TRIAL_REMAINING = null;
 var SHEET_ID = '13KsNb1SxA7DYYQAzhaYxj_qKX0PXV1PXyKAZ7cEapRc';
 var SHEET_TAB = 'episode list';
 var TMDB_DEFAULT = '9f6a7cc8ad0b39dcb6381c44a16761cc';
-var CLAUDE_MODEL = 'claude-sonnet-4-5';
 var IMG = 'https://image.tmdb.org/t/p/';
+var FREE_TRIAL_CALLS = 5;
+// Stripe Payment Links — filled in once the Stripe product/prices exist.
+var STRIPE_LINK_MONTHLY = '';
+var STRIPE_LINK_ANNUAL = '';
 
 /* ================= STATE ================= */
 var RW = [];            // episode list [{title,year,director,genres}]
@@ -357,7 +364,48 @@ function parseCSV(text){
   return rows;
 }
 function tmdbKey(){ return localStorage.getItem('tmdb_key') || TMDB_DEFAULT; }
-function claudeKey(){ return localStorage.getItem('anthropic_key') || ''; }
+function aiErrorHTML(e){
+  var html = '<p style="color:var(--red);margin-top:10px">⚠️ ' + esc(e.message) + '</p>';
+  if(e.upgradeRequired){
+    html += '<div style="display:flex;gap:8px;margin-top:6px">'
+      + '<button class="btn btn-gold btn-sm" data-action="upgrademonthly">⭐ $2.99/mo</button>'
+      + '<button class="btn btn-outline btn-sm" data-action="upgradeannual">⭐ $24/yr</button></div>';
+  }
+  return html;
+}
+function openUpgrade(url){
+  if(!url){ toast('Upgrade link not set up yet — check back soon', 'err'); return; }
+  if(!ME){ toast('Sign in first', 'err'); return; }
+  // client_reference_id is how the stripe-webhook function matches a completed checkout back
+  // to this Supabase user — Stripe Payment Links pass this straight through to the session.
+  var sep = url.indexOf('?') >= 0 ? '&' : '?';
+  var full = url + sep + 'client_reference_id=' + encodeURIComponent(ME.id) + (ME.email ? '&prefilled_email=' + encodeURIComponent(ME.email) : '');
+  window.open(full, '_blank', 'noopener');
+}
+function renderAiPlanStatus(){
+  var box = el('aiPlanStatus'), upBox = el('upgradeBox');
+  if(!box || !SUPA) return;
+  if(!PROFILE){ box.textContent = 'Sign in to see your AI plan.'; if(upBox) upBox.style.display = 'none'; return; }
+  if(PROFILE.plan === 'paid'){
+    var renews = PROFILE.plan_renews_at ? new Date(PROFILE.plan_renews_at).toLocaleDateString() : '';
+    var status = PROFILE.subscription_status && PROFILE.subscription_status !== 'active'
+      ? ' <span style="color:var(--red)">(' + esc(PROFILE.subscription_status) + ')</span>' : '';
+    box.innerHTML = '<span style="color:var(--green)">● Paid plan</span>' + (renews ? ' — renews ' + esc(renews) : '') + status;
+    if(upBox) upBox.style.display = 'none';
+    return;
+  }
+  if(upBox) upBox.style.display = 'block';
+  if(AI_TRIAL_REMAINING !== null){
+    box.textContent = 'Free plan — ' + AI_TRIAL_REMAINING + ' of ' + FREE_TRIAL_CALLS + ' trial AI calls left';
+    return;
+  }
+  box.innerHTML = '<span class="spin"></span> Checking free trial…';
+  SUPA.from('ai_usage').select('id', { count:'exact', head:true }).then(function(res){
+    if(res.error){ box.innerHTML = '<span style="color:var(--red)">⚠️ ' + esc(res.error.message) + '</span>'; return; }
+    AI_TRIAL_REMAINING = Math.max(0, FREE_TRIAL_CALLS - (res.count || 0));
+    box.textContent = 'Free plan — ' + AI_TRIAL_REMAINING + ' of ' + FREE_TRIAL_CALLS + ' trial AI calls left';
+  }).catch(function(e){ box.innerHTML = '<span style="color:var(--red)">⚠️ ' + esc(e.message) + '</span>'; });
+}
 
 /* ================= LOOKUPS ================= */
 function rwFindAll(title, year){
@@ -491,6 +539,7 @@ function enterApp(){
   document.body.classList.remove('preauth');
   renderUserBox();
   setSubtitle();
+  renderAiPlanStatus();
   if(!BOOTED){ BOOTED = true; loadCloud(); loadSheet(); }
 }
 function sendMagicLink(){
@@ -614,18 +663,30 @@ function findMovie(title, year){
   });
 }
 
-/* ================= CLAUDE ================= */
-function askClaude(prompt, maxTokens){
-  var key = claudeKey();
-  if(!key) return Promise.reject(new Error('No Anthropic API key — add one in Settings'));
-  return fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'content-type': 'application/json', 'anthropic-dangerous-direct-browser-access': 'true' },
-    body: JSON.stringify({ model: CLAUDE_MODEL, max_tokens: maxTokens || 1200, messages: [{ role: 'user', content: prompt }] })
+/* ================= AI (Gemini via server-side proxy) ================= */
+// Every AI feature (Suggest, Refine, Watch Tonight) shares this one call. The actual model key
+// lives only in the ai-proxy edge function's secrets — never in the browser. The proxy also
+// enforces the free-trial count / paid-plan / daily cap, so failures here can mean "upgrade needed"
+// as well as a plain network/API error — callers should check err.upgradeRequired.
+function askClaude(prompt, maxTokens, feature){
+  if(!SUPA || !ME) return Promise.reject(new Error('Not signed in'));
+  return SUPA.auth.getSession().then(function(res){
+    var session = res.data && res.data.session;
+    if(!session) throw new Error('Not signed in');
+    return fetch(SB_URL + '/functions/v1/ai-proxy', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + session.access_token, 'content-type': 'application/json' },
+      body: JSON.stringify({ prompt: prompt, max_tokens: maxTokens || 1200, feature: feature || 'unknown' })
+    });
   }).then(function(r){
-    return r.json().then(function(j){
-      if(!r.ok) throw new Error('Claude API: ' + ((j.error && j.error.message) || r.status));
-      return j.content.map(function(b){ return b.text || ''; }).join('');
+    return r.json().catch(function(){ return {}; }).then(function(j){
+      if(!r.ok){
+        var err = new Error(j.error || ('AI proxy error ' + r.status));
+        err.upgradeRequired = !!j.upgrade_required;
+        throw err;
+      }
+      if(typeof j.trial_remaining === 'number'){ AI_TRIAL_REMAINING = j.trial_remaining; renderAiPlanStatus(); }
+      return j.text || '';
     });
   });
 }
@@ -1221,9 +1282,9 @@ function refineNotes(){
   var fields = { vibe:d.vibe, pulled_in:d.pulled_in, fav_actor:d.fav_actor, fav_scene:d.fav_scene, didnt_click:d.didnt_click, notes:d.notes };
   var any = Object.keys(fields).some(function(k){ return fields[k]; });
   if(!any){ toast('Write some rough notes first', 'err'); return; }
-  el('refineBox').innerHTML = '<p class="muted" style="margin-top:10px"><span class="spin"></span> Refining with Claude…</p>';
+  el('refineBox').innerHTML = '<p class="muted" style="margin-top:10px"><span class="spin"></span> Refining…</p>';
   var prompt = 'Polish these rough personal film-review notes about "' + FORM.title + '". Keep my voice, first person, casual but sharper and clearer. Do not invent details I did not write. Keep each field concise. Return ONLY JSON with the same keys, null for empty ones: ' + JSON.stringify(fields);
-  askClaude(prompt, 900).then(function(text){
+  askClaude(prompt, 900, 'refine').then(function(text){
     var out = extractJSON(text);
     if(!out) throw new Error('Could not parse refinement');
     FORM.refined = out;
@@ -1238,7 +1299,7 @@ function refineNotes(){
     var aidx = ref({ type:'userefinedall' });
     html += '<button class="btn btn-outline btn-sm" style="margin-top:10px" data-action="userefinedall" data-ref="' + aidx + '">Use all refined</button>';
     el('refineBox').innerHTML = html;
-  }).catch(function(e){ el('refineBox').innerHTML = '<p style="color:var(--red);margin-top:10px">⚠️ ' + esc(e.message) + '</p>'; });
+  }).catch(function(e){ el('refineBox').innerHTML = aiErrorHTML(e); });
 }
 var REFINE_FIELD_IDS = { vibe:'rf_vibe', pulled_in:'rf_pulled', fav_actor:'rf_actor', fav_scene:'rf_scene', didnt_click:'rf_didnt', notes:'rf_notes' };
 function closeModal(){ el('modalVeil').classList.remove('open'); FORM = null; }
@@ -1279,7 +1340,7 @@ function removeWatchlist(row, silent){
 /* ================= SUGGEST ================= */
 function runSuggest(){
   var out = el('sugOut');
-  out.innerHTML = '<p class="muted" style="margin-top:14px"><span class="spin"></span> Building taste profile & asking Claude…</p>';
+  out.innerHTML = '<p class="muted" style="margin-top:14px"><span class="spin"></span> Building taste profile & asking the AI…</p>';
   var profile = tasteProfile();
   var prompt = '';
   if(SUG_MODE === 'show'){
@@ -1294,7 +1355,7 @@ function runSuggest(){
     prompt = profile + '\n\nSuggest 5 films (not already in my ratings) I am most likely to love. Reasons must reference my actual rated films/notes.';
   }
   prompt += '\n\nReturn ONLY a JSON array: [{"title":"…","year":1999,"reason":"…"}]';
-  askClaude(prompt, 1400).then(function(text){
+  askClaude(prompt, 1400, 'suggest').then(function(text){
     var arr = extractJSON(text);
     if(!arr || !arr.length) throw new Error('Could not parse suggestions');
     var html = '';
@@ -1307,7 +1368,7 @@ function runSuggest(){
         + '<button class="btn btn-outline btn-sm" data-action="wladd" data-ref="' + widx + '">+ Watchlist</button></div></div>';
     });
     out.innerHTML = html;
-  }).catch(function(e){ out.innerHTML = '<p style="color:var(--red);margin-top:14px">⚠️ ' + esc(e.message) + '</p>'; });
+  }).catch(function(e){ out.innerHTML = aiErrorHTML(e); });
 }
 
 /* ================= WATCH TONIGHT ================= */
@@ -1327,15 +1388,15 @@ function watchTonight(){
   var prompt = tasteProfile().slice(0,5000)
     + '\n\nCANDIDATES:\n' + candidates.join('\n')
     + '\n\nIt is ' + timeDesc + '. Pick EXACTLY ONE film from the candidates for me to watch tonight. Consider typical runtime vs how late it is (' + hour + ':00 hour) and my taste. Return ONLY JSON: {"title":"…","year":1999,"reason":"one short punchy sentence","runtime_note":"e.g. ~2h — done by 11:30pm"}';
-  askClaude(prompt, 400).then(function(text){
+  askClaude(prompt, 400, 'watch_tonight').then(function(text){
     var pick = extractJSON(text);
     if(!pick || !pick.title) throw new Error('Could not parse pick');
     renderTonight(pick);
   }).catch(function(e){
     var c = WL.length ? WL[Math.floor(Math.random()*WL.length)] : null;
     if(!c && unrated.length) c = unrated[0];
-    if(c){ renderTonight({ title:c.title, year:c.year, reason:'Random pick (Claude unavailable: ' + e.message + ')', runtime_note:'' }); }
-    else out.innerHTML = '<p style="color:var(--red);margin-top:14px">⚠️ ' + esc(e.message) + '</p>';
+    if(c){ renderTonight({ title:c.title, year:c.year, reason:'Random pick (AI pick unavailable: ' + e.message + ')', runtime_note:'' }); }
+    else out.innerHTML = aiErrorHTML(e);
   });
 }
 function renderTonight(pick){
@@ -1391,6 +1452,17 @@ function showTab(name){
   if(name==='show') renderShow();
   if(name==='watchlist') renderWatchlist();
   if(name==='people') renderPeople();
+  if(name==='settings') refreshAiPlanFromCloud();
+}
+function refreshAiPlanFromCloud(){
+  // Re-pull the profile (plan/subscription fields) so a just-completed Stripe checkout or
+  // webhook update shows up without a full reload.
+  if(!SUPA || !ME) { renderAiPlanStatus(); return; }
+  SUPA.from('profiles').select('*').eq('id', ME.id).maybeSingle().then(function(res){
+    if(!res.error && res.data) PROFILE = res.data;
+    AI_TRIAL_REMAINING = null;
+    renderAiPlanStatus();
+  }).catch(function(){ renderAiPlanStatus(); });
 }
 function exportRatings(){
   var blob = new Blob([JSON.stringify({ exported:new Date().toISOString(), ratings:MY, watchlist:WL, followed_people:PEOPLE }, null, 2)], { type:'application/json' });
@@ -1444,7 +1516,8 @@ document.addEventListener('click', function(ev){
   else if(action==='suggest') runSuggest();
   else if(action==='tonight') watchTonight();
   else if(action==='export') exportRatings();
-  else if(action==='savekey'){ localStorage.setItem('anthropic_key', el('setAnthropic').value.trim()); toast('Anthropic key saved to this browser', 'ok'); }
+  else if(action==='upgrademonthly') openUpgrade(STRIPE_LINK_MONTHLY);
+  else if(action==='upgradeannual') openUpgrade(STRIPE_LINK_ANNUAL);
   else if(action==='magiclink') sendMagicLink();
   else if(action==='google') signInGoogle();
   else if(action==='signout') signOut();
@@ -1467,7 +1540,6 @@ el('authEmail').addEventListener('keydown', function(e){ if(e.key==='Enter') sen
 el('obName').addEventListener('keydown', function(e){ if(e.key==='Enter') saveProfile(); });
 
 /* ================= INIT ================= */
-el('setAnthropic').value = claudeKey();
 el('setTmdb').value = tmdbKey();
 // Data loading now happens inside enterApp(), after the user is authenticated.
 initAuth();
