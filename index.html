@@ -7,10 +7,11 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="My Rewatchables">
-<title>My Rewatchables · Mikel</title>
+<title>My Rewatchables</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:ital,wght@0,400;0,500;0,700;1,400&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 :root{--bg:#0b0a08;--panel:#14120e;--panel2:#1b1812;--line:#2a2416;--gold:#c9a84c;--gold-dim:#8a7434;--txt:#e8e2d2;--dim:#9a8f74;--red:#c05b4d;--green:#7da05e}
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
@@ -128,18 +129,40 @@ label{font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:.0
 hr.gold{border:none;border-top:1px solid var(--line);margin:14px 0}
 .right{margin-left:auto}
 @media(max-width:520px){.formgrid{grid-template-columns:1fr}.card-top img.poster{width:92px}}
+body.preauth header, body.preauth #appWrap{display:none!important}
+.auth-gate{position:fixed;inset:0;background:radial-gradient(120% 90% at 50% 0%,#141009,#0b0a08);z-index:200;display:none;flex-direction:column;align-items:center;justify-content:center;padding:24px}
+.auth-card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:26px 22px;width:min(400px,94vw);text-align:center;box-shadow:0 20px 60px #000a}
+.auth-card h1{font-family:'Bebas Neue',sans-serif;font-size:40px;color:var(--gold);line-height:.95;letter-spacing:.03em}
+.auth-card .sub{color:var(--dim);font-size:13px;margin:6px 0 20px}
+.auth-card label{text-align:left}
+.auth-card .btn{width:100%;margin-top:10px;justify-content:center;display:flex;align-items:center;gap:9px}
+.gbtn{background:#fff;color:#1f1f1f;border:1px solid #fff;font-weight:700}
+.gbtn:active{transform:scale(.98)}
+.auth-sep{color:var(--dim);font-size:11px;letter-spacing:.14em;text-transform:uppercase;margin:16px 0 4px}
+.auth-msg{font-size:13px;margin-top:14px;min-height:18px}
+.auth-foot{color:var(--dim);font-size:11px;margin-top:18px;line-height:1.5}
+.userbox{display:flex;align-items:center;gap:8px}
+.userbox .uav{width:30px;height:30px;border-radius:50%;background:var(--panel2);border:1px solid var(--gold-dim);overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:14px;color:var(--gold);font-weight:700;flex-shrink:0}
+.userbox .uav img{width:100%;height:100%;object-fit:cover}
+.userbox .uname{font-size:13px;color:var(--txt);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media(max-width:680px){.userbox .uname{display:none}}
 </style>
 </head>
-<body>
+<body class="preauth">
 <header><div class="wrap">
   <div class="hrow">
-    <div class="logo">My Rewatchables <small>Mikel's Screening Room</small></div>
+    <div class="logo">My Rewatchables <small id="subTitle">Screening Room</small></div>
     <div class="searchrow hdr-search">
       <input type="text" id="q" placeholder="Search films, actors, directors…" autocomplete="off">
       <button class="btn btn-outline" data-action="dosearch">Go</button>
       <div class="ac" id="ac" style="display:none"></div>
     </div>
     <button class="btn btn-gold" data-action="tonight">🍿 Watch Tonight</button>
+    <div class="userbox" id="userBox" style="display:none">
+      <div class="uav" id="userAvatar"></div>
+      <span class="uname" id="userName"></span>
+      <button class="btn btn-sm btn-outline" data-action="signout">Sign out</button>
+    </div>
   </div>
   <div class="tabs" id="tabs">
     <div class="tab on" data-action="tab" data-tab="ratings">⭐ My Ratings <span class="count" id="cRatings">0</span></div>
@@ -151,7 +174,7 @@ hr.gold{border:none;border-top:1px solid var(--line);margin:14px 0}
   </div>
 </div></header>
 
-<div class="wrap">
+<div class="wrap" id="appWrap">
   <div class="panel" id="p-search">
     <div id="cardBox"></div>
     <div id="searchResults"></div>
@@ -210,6 +233,11 @@ hr.gold{border:none;border-top:1px solid var(--line);margin:14px 0}
 
   <div class="panel" id="p-settings">
     <h2>Settings</h2>
+    <label>Account</label>
+    <div class="kv" id="acctStatus">Not signed in</div>
+    <div id="acctName" class="kv" style="display:none"></div>
+    <button class="btn btn-outline btn-sm" data-action="signout" style="margin-top:6px">Sign out</button>
+    <hr class="gold">
     <label>Anthropic API key (stored only in this browser)</label>
     <div style="display:flex;gap:8px"><input type="text" id="setAnthropic" placeholder="sk-ant-…"><button class="btn btn-outline" data-action="savekey">Save</button></div>
     <label>TMDB API key</label>
@@ -230,11 +258,46 @@ hr.gold{border:none;border-top:1px solid var(--line);margin:14px 0}
 <div class="modal-veil" id="modalVeil"><div class="modal" id="modal"></div></div>
 <div class="toast-box" id="toasts"></div>
 
+<div id="bootLoading" style="position:fixed;inset:0;background:var(--bg);z-index:210;display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:14px"><span class="spin"></span>&nbsp;&nbsp;Loading your Screening Room…</div>
+
+<div class="auth-gate" id="authGate">
+  <div class="auth-card">
+    <h1>My Rewatchables</h1>
+    <div class="sub">Your personal Rewatchables screening room. Sign in to see your ratings, watchlist and follows.</div>
+    <label>Email</label>
+    <input type="text" id="authEmail" placeholder="you@example.com" autocomplete="email" inputmode="email">
+    <button class="btn btn-gold" data-action="magiclink">✉️ Send me a magic link</button>
+    <div class="auth-sep">or</div>
+    <button class="btn gbtn" data-action="google">Continue with Google</button>
+    <div class="auth-msg" id="authMsg"></div>
+    <div class="auth-foot">We'll email you a one-time sign-in link — no password to remember.</div>
+  </div>
+</div>
+
+<div class="auth-gate" id="onboardGate">
+  <div class="auth-card">
+    <h1>One quick thing</h1>
+    <div class="sub">What should we call your screening room?</div>
+    <label>Display name</label>
+    <input type="text" id="obName" placeholder="e.g. Mikel" autocomplete="name">
+    <button class="btn btn-gold" data-action="saveprofile">Enter →</button>
+    <div class="auth-msg" id="obMsg"></div>
+  </div>
+</div>
+
 <script>
 'use strict';
 /* ================= CONFIG ================= */
 var SB_URL = 'https://ylexjdgfkcinnxjzmakt.supabase.co';
-var SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlsZXhqZGdma2Npbm54anptYWt0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQyNTUzODEsImV4cCI6MjA5OTgzMTM4MX0.5kBoB2MSNz2Xmmt2jvXQKxt_cd-iUM7FfDvd-tCN2EQ';
+// Publishable (anon) key — safe to ship in the browser. Row-Level Security is what
+// protects data; this key only lets an anonymous or signed-in client talk to PostgREST.
+var SB_KEY = 'sb_publishable_NnuHKulCrQ1xfiy19jLjtA_goENmK-c';
+// supabase-js client: handles the auth session, token refresh and the Authorization
+// header automatically, so every from() call runs as the signed-in user.
+var SUPA = (window.supabase && window.supabase.createClient)
+  ? window.supabase.createClient(SB_URL, SB_KEY, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } })
+  : null;
+var ME = null, PROFILE = null, BOOTED = false;
 var SHEET_ID = '13KsNb1SxA7DYYQAzhaYxj_qKX0PXV1PXyKAZ7cEapRc';
 var SHEET_TAB = 'episode list';
 var TMDB_DEFAULT = '9f6a7cc8ad0b39dcb6381c44a16761cc';
@@ -325,30 +388,135 @@ function wlFind(title, year){
   return null;
 }
 
-/* ================= SUPABASE ================= */
-function sb(path, opts){
-  opts = opts || {};
-  var headers = { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY, 'Content-Type': 'application/json' };
-  if(opts.prefer) headers['Prefer'] = opts.prefer;
-  return fetch(SB_URL + '/rest/v1/' + path, { method: opts.method || 'GET', headers: headers, body: opts.body ? JSON.stringify(opts.body) : undefined })
-    .then(function(r){
-      if(!r.ok) return r.text().then(function(t){ throw new Error('Supabase ' + r.status + ': ' + t.slice(0,180)); });
-      if(r.status === 204) return null;
-      return r.json();
-    });
-}
+/* ================= SUPABASE (data layer via supabase-js) ================= */
+// PostgREST error helper: throws with a readable message so every path has a visible error.
+function sbErr(res){ if(res && res.error) throw new Error(res.error.message || 'Supabase error'); return res && res.data; }
+
 function loadCloud(){
+  if(!SUPA) return Promise.resolve();
   return Promise.all([
-    sb('ratings?select=*&order=saved_at.desc'),
-    sb('watchlist?select=*&order=added_at.desc'),
-    sb('followed_people?select=*&order=created_at.desc')
+    SUPA.from('ratings').select('*').order('saved_at', { ascending: false }),
+    SUPA.from('watchlist').select('*').order('added_at', { ascending: false }),
+    SUPA.from('followed_people').select('*').order('created_at', { ascending: false })
   ]).then(function(res){
-    MY = res[0]||[]; WL = res[1]||[]; PEOPLE = res[2]||[];
+    MY = sbErr(res[0]) || []; WL = sbErr(res[1]) || []; PEOPLE = sbErr(res[2]) || [];
     el('sbStatus').innerHTML = '<span style="color:var(--green)">● Connected</span> — ' + MY.length + ' ratings, ' + WL.length + ' watchlist, ' + PEOPLE.length + ' people';
     refreshCounts(); renderRatings(); renderShow(); renderWatchlist(); renderPeople();
   }).catch(function(e){
     el('sbStatus').innerHTML = '<span style="color:var(--red)">● Error</span> ' + esc(e.message);
     toast('Could not load from cloud: ' + e.message, 'err');
+  });
+}
+
+/* ================= AUTH ================= */
+function hideBoot(){ var b = el('bootLoading'); if(b) b.style.display = 'none'; }
+function showGate(which){
+  hideBoot();
+  el('authGate').style.display    = which === 'login'   ? 'flex' : 'none';
+  el('onboardGate').style.display = which === 'onboard' ? 'flex' : 'none';
+}
+function redirectUrl(){ return location.origin + location.pathname; }
+
+function initAuth(){
+  if(!SUPA){
+    hideBoot();
+    el('authGate').style.display = 'flex';
+    el('authMsg').innerHTML = '<span style="color:var(--red)">⚠️ Could not load the sign-in library. Check your connection and reload.</span>';
+    return;
+  }
+  SUPA.auth.getSession().then(function(res){
+    var session = res.data ? res.data.session : null;
+    if(!session){ showGate('login'); return; }
+    afterLogin(session);
+  }).catch(function(e){
+    showGate('login');
+    el('authMsg').innerHTML = '<span style="color:var(--red)">⚠️ ' + esc(e.message) + '</span>';
+  });
+  SUPA.auth.onAuthStateChange(function(event, session){
+    if((event === 'SIGNED_IN' || event === 'INITIAL_SESSION') && session && !BOOTED){ afterLogin(session); }
+    else if(event === 'SIGNED_OUT'){ document.body.classList.add('preauth'); showGate('login'); }
+  });
+}
+function afterLogin(session){
+  ME = session.user;
+  SUPA.from('profiles').select('*').eq('id', ME.id).maybeSingle().then(function(res){
+    if(res.error) throw new Error(res.error.message);
+    PROFILE = res.data || null;
+    if(!PROFILE || !PROFILE.display_name){ prefillOnboard(); showGate('onboard'); return; }
+    enterApp();
+  }).catch(function(e){
+    // Don't strand the user if the profile lookup fails — let them set a name.
+    PROFILE = null; prefillOnboard(); showGate('onboard');
+    el('obMsg').innerHTML = '<span style="color:var(--red)">' + esc(e.message) + '</span>';
+  });
+}
+function prefillOnboard(){
+  var meta = (ME && ME.user_metadata) || {};
+  var guess = meta.full_name || meta.name || (ME && ME.email ? ME.email.split('@')[0] : '');
+  if(el('obName') && !el('obName').value) el('obName').value = guess;
+}
+function displayName(){ return (PROFILE && PROFILE.display_name) || (ME && ME.email ? ME.email.split('@')[0] : 'My'); }
+function setSubtitle(){
+  var n = displayName();
+  el('subTitle').textContent = n + '’s Screening Room';
+}
+function renderUserBox(){
+  var box = el('userBox');
+  if(!box || !ME) return;
+  box.style.display = 'flex';
+  var meta = ME.user_metadata || {};
+  var avatar = meta.avatar_url || meta.picture || '';
+  var initial = (displayName().charAt(0) || '?').toUpperCase();
+  el('userAvatar').innerHTML = avatar ? '<img src="' + esc(avatar) + '" alt="">' : esc(initial);
+  el('userName').textContent = displayName();
+  el('acctStatus').innerHTML = '<span style="color:var(--green)">● Signed in</span> — ' + esc(ME.email || '');
+  var an = el('acctName');
+  if(an){ an.style.display = 'block'; an.textContent = 'Screening room: ' + displayName(); }
+}
+function enterApp(){
+  hideBoot();
+  el('authGate').style.display = 'none';
+  el('onboardGate').style.display = 'none';
+  document.body.classList.remove('preauth');
+  renderUserBox();
+  setSubtitle();
+  if(!BOOTED){ BOOTED = true; loadCloud(); loadSheet(); }
+}
+function sendMagicLink(){
+  var email = el('authEmail').value.trim();
+  if(!email){ el('authMsg').innerHTML = '<span style="color:var(--red)">Enter your email first.</span>'; return; }
+  el('authMsg').innerHTML = '<span class="spin"></span> Sending…';
+  SUPA.auth.signInWithOtp({ email: email, options: { emailRedirectTo: redirectUrl() } }).then(function(res){
+    if(res.error){ el('authMsg').innerHTML = '<span style="color:var(--red)">⚠️ ' + esc(res.error.message) + '</span>'; return; }
+    el('authMsg').innerHTML = '<span style="color:var(--green)">✓ Check your email for the sign-in link.</span>';
+  }).catch(function(e){ el('authMsg').innerHTML = '<span style="color:var(--red)">⚠️ ' + esc(e.message) + '</span>'; });
+}
+function signInGoogle(){
+  el('authMsg').innerHTML = '<span class="spin"></span> Redirecting to Google…';
+  SUPA.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: redirectUrl() } }).then(function(res){
+    if(res.error){ el('authMsg').innerHTML = '<span style="color:var(--red)">⚠️ ' + esc(res.error.message) + '</span>'; }
+  }).catch(function(e){ el('authMsg').innerHTML = '<span style="color:var(--red)">⚠️ ' + esc(e.message) + '</span>'; });
+}
+function saveProfile(){
+  var name = el('obName').value.trim();
+  if(!name){ el('obMsg').innerHTML = '<span style="color:var(--red)">Please enter a name.</span>'; return; }
+  if(!ME){ el('obMsg').innerHTML = '<span style="color:var(--red)">Session lost — please sign in again.</span>'; return; }
+  el('obMsg').innerHTML = '<span class="spin"></span> Saving…';
+  SUPA.from('profiles').upsert({ id: ME.id, display_name: name }).select().then(function(res){
+    if(res.error){ el('obMsg').innerHTML = '<span style="color:var(--red)">⚠️ ' + esc(res.error.message) + '</span>'; return; }
+    PROFILE = (res.data && res.data[0]) ? res.data[0] : { id: ME.id, display_name: name };
+    SUPA.auth.updateUser({ data: { display_name: name } });
+    enterApp();
+  }).catch(function(e){ el('obMsg').innerHTML = '<span style="color:var(--red)">⚠️ ' + esc(e.message) + '</span>'; });
+}
+function signOut(){
+  if(!SUPA) return;
+  SUPA.auth.signOut().then(function(){
+    BOOTED = false; ME = null; PROFILE = null; MY = []; WL = []; PEOPLE = [];
+    if(el('userBox')) el('userBox').style.display = 'none';
+    document.body.classList.add('preauth');
+    showGate('login');
+    if(el('authMsg')) el('authMsg').innerHTML = '';
   });
 }
 
@@ -1016,9 +1184,9 @@ function saveRating(){
   var followNames = Object.keys(FORM.follow);
   var req;
   if(FORM.existing){
-    req = sb('ratings?id=eq.' + FORM.existing.id, { method:'PATCH', body:d, prefer:'return=representation' });
+    req = SUPA.from('ratings').update(d).eq('id', FORM.existing.id).select();
   } else {
-    req = sb('ratings', { method:'POST', body:d, prefer:'return=representation' });
+    req = SUPA.from('ratings').insert(d).select();
   }
   // optimistic
   var optimistic = FORM.existing ? Object.assign({}, FORM.existing, d) : Object.assign({ id:'tmp' }, d);
@@ -1026,7 +1194,9 @@ function saveRating(){
   else MY.unshift(optimistic);
   closeModal(); refreshCounts(); renderRatings(); renderShow();
   toast('Saved: ' + d.title, 'ok');
-  req.then(function(rows){
+  req.then(function(res){
+    if(res.error) throw new Error(res.error.message);
+    var rows = res.data;
     if(rows && rows[0]){ var real = rows[0]; MY = MY.map(function(r){ return (r.id==='tmp'||r.id===real.id) ? real : r; }); }
     renderRatings();
   }).catch(function(e){
@@ -1067,15 +1237,15 @@ function followPerson(name, from){
   if(PEOPLE.some(function(p){ return p.name.toLowerCase()===name.toLowerCase(); })) return;
   var optimistic = { id:'tmp'+Math.random(), name:name, added_from:from||null, created_at:new Date().toISOString() };
   PEOPLE.unshift(optimistic); refreshCounts(); renderPeople();
-  sb('followed_people', { method:'POST', body:{ name:name, added_from:from||null }, prefer:'return=representation' })
-    .then(function(rows){ if(rows&&rows[0]){ PEOPLE = PEOPLE.map(function(p){ return p.id===optimistic.id ? rows[0] : p; }); renderPeople(); } toast('Following ' + name, 'ok'); })
+  SUPA.from('followed_people').insert({ name:name, added_from:from||null }).select()
+    .then(function(res){ if(res.error) throw new Error(res.error.message); var rows=res.data; if(rows&&rows[0]){ PEOPLE = PEOPLE.map(function(p){ return p.id===optimistic.id ? rows[0] : p; }); renderPeople(); } toast('Following ' + name, 'ok'); })
     .catch(function(e){ toast('⚠️ Follow failed: ' + e.message, 'err'); loadCloud(); });
 }
 function unfollowPerson(row){
   PEOPLE = PEOPLE.filter(function(p){ return p.id!==row.id; });
   refreshCounts(); renderPeople(); closeDrawer();
-  sb('followed_people?id=eq.' + row.id, { method:'DELETE' })
-    .then(function(){ toast('Unfollowed ' + row.name, 'ok'); })
+  SUPA.from('followed_people').delete().eq('id', row.id)
+    .then(function(res){ if(res.error) throw new Error(res.error.message); toast('Unfollowed ' + row.name, 'ok'); })
     .catch(function(e){ toast('⚠️ ' + e.message, 'err'); loadCloud(); });
 }
 function addWatchlist(title, year, source){
@@ -1083,15 +1253,15 @@ function addWatchlist(title, year, source){
   if(myFind(title, year)){ toast('Already rated — it’s in your ratings', 'err'); return; }
   var optimistic = { id:'tmp'+Math.random(), title:title, year:year, source:source||null, added_at:new Date().toISOString() };
   WL.unshift(optimistic); refreshCounts(); renderWatchlist();
-  sb('watchlist', { method:'POST', body:{ title:title, year:year, source:source||null }, prefer:'return=representation' })
-    .then(function(rows){ if(rows&&rows[0]){ WL = WL.map(function(w){ return w.id===optimistic.id ? rows[0] : w; }); renderWatchlist(); } toast('Added to watchlist: ' + title, 'ok'); })
+  SUPA.from('watchlist').insert({ title:title, year:year, source:source||null }).select()
+    .then(function(res){ if(res.error) throw new Error(res.error.message); var rows=res.data; if(rows&&rows[0]){ WL = WL.map(function(w){ return w.id===optimistic.id ? rows[0] : w; }); renderWatchlist(); } toast('Added to watchlist: ' + title, 'ok'); })
     .catch(function(e){ toast('⚠️ ' + e.message, 'err'); loadCloud(); });
 }
 function removeWatchlist(row, silent){
   WL = WL.filter(function(w){ return w.id!==row.id; });
   refreshCounts(); renderWatchlist();
-  sb('watchlist?id=eq.' + row.id, { method:'DELETE' })
-    .then(function(){ if(!silent) toast('Removed from watchlist', 'ok'); })
+  SUPA.from('watchlist').delete().eq('id', row.id)
+    .then(function(res){ if(res.error) throw new Error(res.error.message); if(!silent) toast('Removed from watchlist', 'ok'); })
     .catch(function(e){ toast('⚠️ ' + e.message, 'err'); loadCloud(); });
 }
 
@@ -1264,6 +1434,10 @@ document.addEventListener('click', function(ev){
   else if(action==='tonight') watchTonight();
   else if(action==='export') exportRatings();
   else if(action==='savekey'){ localStorage.setItem('anthropic_key', el('setAnthropic').value.trim()); toast('Anthropic key saved to this browser', 'ok'); }
+  else if(action==='magiclink') sendMagicLink();
+  else if(action==='google') signInGoogle();
+  else if(action==='signout') signOut();
+  else if(action==='saveprofile') saveProfile();
 });
 el('q').addEventListener('input', updateAC);
 el('q').addEventListener('keydown', function(e){ if(e.key==='Enter') doSearch(); });
@@ -1277,12 +1451,14 @@ el('fTier').addEventListener('change', renderRatings);
 el('fSort').addEventListener('change', renderRatings);
 el('setTmdb').addEventListener('change', function(){ localStorage.setItem('tmdb_key', el('setTmdb').value.trim()); toast('TMDB key saved', 'ok'); });
 document.addEventListener('click', function(e){ if(!e.target.closest('.searchrow')) hideAC(); });
+el('authEmail').addEventListener('keydown', function(e){ if(e.key==='Enter') sendMagicLink(); });
+el('obName').addEventListener('keydown', function(e){ if(e.key==='Enter') saveProfile(); });
 
 /* ================= INIT ================= */
 el('setAnthropic').value = claudeKey();
 el('setTmdb').value = tmdbKey();
-loadCloud();
-loadSheet();
+// Data loading now happens inside enterApp(), after the user is authenticated.
+initAuth();
 </script>
 </body>
 </html>
