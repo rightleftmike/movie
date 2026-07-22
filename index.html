@@ -160,8 +160,6 @@ body.preauth header, body.preauth #appWrap{display:none!important}
     </div>
     <button class="btn btn-gold" data-action="tonight">🍿 Watch Tonight</button>
     <div class="userbox" id="userBox" style="display:none">
-      <div class="uav" id="userAvatar"></div>
-      <span class="uname" id="userName"></span>
       <button class="btn btn-sm btn-outline" data-action="signout">Sign out</button>
     </div>
   </div>
@@ -515,11 +513,6 @@ function renderUserBox(){
   var box = el('userBox');
   if(!box || !ME) return;
   box.style.display = 'flex';
-  var meta = ME.user_metadata || {};
-  var avatar = meta.avatar_url || meta.picture || '';
-  var initial = (displayName().charAt(0) || '?').toUpperCase();
-  el('userAvatar').innerHTML = avatar ? '<img src="' + esc(avatar) + '" alt="">' : esc(initial);
-  el('userName').textContent = displayName();
   el('acctStatus').innerHTML = '<span style="color:var(--green)">● Signed in</span> — ' + esc(ME.email || '');
   if(el('setName')) el('setName').value = displayName();
 }
