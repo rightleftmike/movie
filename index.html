@@ -1348,7 +1348,7 @@ function runSuggest(){
     prompt = profile + '\n\nUNRATED REWATCHABLES EPISODES:\n' + unrated.join('; ').slice(0,6000)
       + '\n\nFrom the unrated episode list above ONLY, pick the 5 films I am most likely to love. For each, give a reason tied to specific films/notes in my ratings.';
   } else if(SUG_MODE === 'beyond'){
-    var showTitles = RW.map(function(f){ return f.title; }).join('; ').slice(0,4000);
+    var showTitles = RW.map(function(f){ return f.title; }).join('; ').slice(0,12000);
     prompt = profile + '\n\nFILMS ALREADY ON THE REWATCHABLES PODCAST (avoid these):\n' + showTitles
       + '\n\nSuggest 5 films NOT on that list and NOT in my ratings that I would love. Reasons must reference my actual rated films/notes.';
   } else {
@@ -1358,6 +1358,14 @@ function runSuggest(){
   askClaude(prompt, 1400, 'suggest').then(function(text){
     var arr = extractJSON(text);
     if(!arr || !arr.length) throw new Error('Could not parse suggestions');
+    if(SUG_MODE === 'beyond'){
+      // The model doesn't reliably honor a long "avoid these titles" instruction buried in the
+      // prompt, so cross-check deterministically against the show list rather than trusting it.
+      var onShow = {};
+      RW.forEach(function(f){ onShow[norm(f.title)] = true; });
+      arr = arr.filter(function(s){ return !onShow[norm(s.title)]; });
+      if(!arr.length) throw new Error('AI kept suggesting films already on the show — try again');
+    }
     var html = '';
     arr.forEach(function(s){
       var midx = ref({ type:'movie', title:s.title, year:s.year });
