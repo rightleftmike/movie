@@ -183,7 +183,7 @@ body.preauth header, body.preauth #appWrap{display:none!important}
   <div class="panel on" id="p-ratings">
     <div class="statsbar" id="statsBar"></div>
     <div class="controls">
-      <select id="fRating"><option value="">All ratings</option><option>All-timer</option><option>Loved</option><option>Liked</option><option>Meh</option><option>Disliked</option></select>
+      <select id="fRating"><option value="">All ratings</option><option value="All-timer">All-timer ★★★★★</option><option value="Loved">Loved ★★★★</option><option value="Liked">Liked ★★★</option><option value="Meh">Meh ★★</option><option value="Disliked">Disliked ★</option></select>
       <select id="fTier"><option value="">All tiers</option><option>Top 5</option><option>Top 10</option><option>Top 25</option><option>Top 50</option><option>Top 100</option><option>Outside Top 100</option></select>
       <select id="fSort"><option value="tier">Sort: tier</option><option value="recent">Sort: recent</option><option value="az">Sort: A–Z</option></select>
     </div>
@@ -1200,7 +1200,12 @@ function openRatingForm(ctx){
   }
 }
 function ratingOpts(sel){
-  return ['All-timer','Loved','Liked','Meh','Disliked'].map(function(o){ return '<option' + (o===sel?' selected':'') + '>' + o + '</option>'; }).join('');
+  // value=o keeps the stored value the plain label (DB CHECK constraint expects exactly that);
+  // only the displayed option text gets the star suffix.
+  return ['All-timer','Loved','Liked','Meh','Disliked'].map(function(o){
+    var stars = new Array((RATING_STARS[o]||0)+1).join('★');
+    return '<option value="' + o + '"' + (o===sel?' selected':'') + '>' + o + ' ' + stars + '</option>';
+  }).join('');
 }
 function tierOpts(sel){
   var base = '<option value=""' + (!sel?' selected':'') + '>—</option>';
