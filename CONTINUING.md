@@ -63,11 +63,9 @@ Tabs: Search (TMDB, autocomplete over show list + ratings, full movie card), My 
 
 ## Backlog (in rough priority order)
 
-1. **The Departed rating** — still missing (was only in old localStorage). Ask Mikel for details, insert via SQL. Doubles as the chat-workflow verification (task never completed).
-2. **Instagram crime/thriller watchlist (~100 films)** — not recovered; Mikel needs to paste it, then seed `watchlist` with source 'instagram crime list'.
-3. **Missing N–Z ratings** — the v10 blob only covered A–M + Top Gun: Maverick; Mikel may re-add others over time.
-4. **Multi-user version** — full plan in MULTIUSER_PLAN.md. **Phase 1 (Auth + per-user data + RLS) is DONE & verified (2026-07-22).** Before inviting the 3–5 guinea-pig friends: (a) optionally finish Google sign-in (Google Cloud OAuth client → paste Client ID/Secret into Supabase Auth → Providers → Google); (b) optionally customize the magic-link email template (Auth → Emails) — default is generic Supabase branding; (c) consider a privacy/terms blurb + feedback link in Settings; (d) note built-in email is rate-limited (~a few/hour) — fine for a handful of friends, add SMTP if it grows. **Then just share the URL — sign-up is self-serve.** Phase 2 = AI proxy + quotas + paid tier (BYO Anthropic key stays meanwhile). Phase 3 = aggregate/community views.
-5. **Episode transcription → key takeaways** (parked): feed MP3s → speech-to-text (~$0.50–0.75/episode, needs an OpenAI or similar key) → Claude distills takeaways → cache in a `takeaways` table → show on movie cards. Only reaches the feed's recent window; run monthly to build the library forward.
+1. **Missing N–Z ratings** — the v10 blob only covered A–M + Top Gun: Maverick; Mikel may re-add others over time.
+2. **Multi-user version** — full plan in MULTIUSER_PLAN.md. **Phase 1 (Auth + per-user data + RLS) is DONE & verified (2026-07-22).** Before inviting the 3–5 guinea-pig friends: (a) finish Google sign-in (Google Cloud OAuth client → paste Client ID/Secret into Supabase Auth → Providers → Google) — in progress; (b) optionally customize the magic-link email template (Auth → Emails) — default is generic Supabase branding; (c) consider a privacy/terms blurb + feedback link in Settings; (d) note built-in email is rate-limited (~a few/hour) — fine for a handful of friends, add SMTP if it grows. **Then just share the URL — sign-up is self-serve.** Phase 2 = AI proxy + quotas + paid tier (BYO Anthropic key stays meanwhile). Phase 3 = aggregate/community views.
+3. **Episode transcription → key takeaways** (parked): feed MP3s → speech-to-text (~$0.50–0.75/episode, needs an OpenAI or similar key) → Claude distills takeaways → cache in a `takeaways` table → show on movie cards. Only reaches the feed's recent window; run monthly to build the library forward.
 
 ## Kickoff prompt for a new session
 
