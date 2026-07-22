@@ -45,6 +45,8 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--gold-dim
 textarea{min-height:64px;resize:vertical}
 label{font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:.08em;display:block;margin:12px 0 4px}
 .searchrow{position:relative;display:flex;gap:8px}
+.hdr-search{flex:1;min-width:0;max-width:380px}
+@media(max-width:680px){.hrow{flex-wrap:wrap}.hdr-search{order:3;max-width:none;flex-basis:100%}}
 .ac{position:absolute;top:44px;left:0;right:0;background:var(--panel2);border:1px solid var(--line);border-radius:10px;z-index:40;overflow:hidden;box-shadow:0 12px 30px #000a}
 .ac-item{padding:10px 12px;cursor:pointer;display:flex;justify-content:space-between;gap:8px;border-bottom:1px solid #221e14}
 .ac-item:hover{background:#221e14}
@@ -132,6 +134,11 @@ hr.gold{border:none;border-top:1px solid var(--line);margin:14px 0}
 <header><div class="wrap">
   <div class="hrow">
     <div class="logo">The Rewatchables <small>Mikel's Screening Room</small></div>
+    <div class="searchrow hdr-search">
+      <input type="text" id="q" placeholder="Search films, actors, directors…" autocomplete="off">
+      <button class="btn btn-outline" data-action="dosearch">Go</button>
+      <div class="ac" id="ac" style="display:none"></div>
+    </div>
     <button class="btn btn-gold" data-action="tonight">🍿 Watch Tonight</button>
   </div>
   <div class="tabs" id="tabs">
@@ -147,13 +154,8 @@ hr.gold{border:none;border-top:1px solid var(--line);margin:14px 0}
 
 <div class="wrap">
   <div class="panel on" id="p-search">
-    <div class="searchrow">
-      <input type="text" id="q" placeholder="Search any film…" autocomplete="off">
-      <button class="btn btn-gold" data-action="dosearch">Go</button>
-      <div class="ac" id="ac" style="display:none"></div>
-    </div>
     <div id="cardBox"></div>
-    <div id="searchResults" class="results"></div>
+    <div id="searchResults"></div>
   </div>
 
   <div class="panel" id="p-ratings">
@@ -256,6 +258,15 @@ function ref(obj){ REF.push(obj); return REF.length - 1; }
 /* ================= UTILS ================= */
 function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 function norm(t){ return String(t||'').toLowerCase().replace(/&/g,'and').replace(/[^a-z0-9]/g,''); }
+function baseEpisodeTitle(raw){
+  // Strips revisit-episode wrapping so "Heat (\"The Re-Heat\")" / "The Re-Departed" resolve
+  // back to the movie's real title ("Heat" / "The Departed") for matching purposes.
+  var s = String(raw||'').trim();
+  var paren = s.indexOf('(');
+  if(paren > 0) s = s.slice(0, paren).trim();
+  s = s.replace(/^(the\s+)?(re|three|two)-/i, function(whole, the){ return the || ''; });
+  return s.trim();
+}
 function toast(msg, kind){
   var d = document.createElement('div');
   d.className = 'toast ' + (kind||'');
@@ -286,10 +297,23 @@ function tmdbKey(){ return localStorage.getItem('tmdb_key') || TMDB_DEFAULT; }
 function claudeKey(){ return localStorage.getItem('anthropic_key') || ''; }
 
 /* ================= LOOKUPS ================= */
+function rwFindAll(title, year){
+  // Returns every Rewatchables episode for a movie, original episode first, revisits
+  // ("Re-"/"Three-" episodes) after — matched via baseEpisodeTitle so revisit rows aren't dead data.
+  var k = norm(title), out = [], i;
+  for(i=0;i<RW.length;i++){
+    if(norm(baseEpisodeTitle(RW[i].title))===k && yearsMatch(RW[i].year, year)) out.push(RW[i]);
+  }
+  out.sort(function(a,b){
+    var an = parseInt(a.epNo,10), bn = parseInt(b.epNo,10);
+    if(!isNaN(an) && !isNaN(bn)) return an-bn;
+    return 0;
+  });
+  return out;
+}
 function rwFind(title, year){
-  var k = norm(title);
-  for(var i=0;i<RW.length;i++){ if(norm(RW[i].title)===k && yearsMatch(RW[i].year, year)) return RW[i]; }
-  return null;
+  var all = rwFindAll(title, year);
+  return all.length ? all[0] : null;
 }
 function myFind(title, year){
   var k = norm(title);
@@ -336,21 +360,29 @@ function loadSheet(){
     var rows = parseCSV(text);
     if(rows.length < 5) throw new Error('sheet looks empty');
     var head = rows[0].map(function(h){ return h.toLowerCase(); });
-    var iT=-1,iY=-1,iD=-1,iG=-1,j;
+    var iT=-1,iY=-1,iD=-1,iG=-1,iE=-1,iR=-1,j;
     for(j=0;j<head.length;j++){
       if(iT<0 && head[j].trim()==='title') iT=j;
       if(iY<0 && head[j].indexOf('release (year)')>=0) iY=j;
       if(iD<0 && head[j].trim()==='director') iD=j;
       if(iG<0 && head[j].indexOf('genre')>=0) iG=j;
+      if(iE<0 && head[j].indexOf('ep. no.')>=0 && head[j].indexOf('all movies')>=0) iE=j;
+      if(iR<0 && head[j].indexOf('release date')>=0) iR=j;
     }
     if(iT<0 || iY<0) throw new Error('columns not found');
     var out=[], seen={};
     for(j=1;j<rows.length;j++){
       var t=(rows[j][iT]||'').trim(), y=parseInt(rows[j][iY],10);
       if(!t || !y) continue;
-      var key = norm(t)+'|'+y;
+      // Dedup on the sheet's own episode number, not title+year: revisit episodes ("Re-"/"Three-")
+      // can share the exact same title text as the original (e.g. "Blue Chips" twice), and that
+      // would otherwise get silently dropped here. Episode number is the one thing guaranteed
+      // unique per real taping; only true re-listings (e.g. 1999-series episodes reissued on the
+      // main feed) share an episode number, and those SHOULD collapse to one row.
+      var epNo = iE>=0 ? (rows[j][iE]||'').trim() : '';
+      var key = epNo ? ('ep'+epNo) : (norm(t)+'|'+y);
       if(seen[key]) continue; seen[key]=1;
-      out.push({ title:t, year:y, director:(rows[j][iD]||'').trim(), genres:(rows[j][iG]||'').replace(/;/g,', ').replace(/, $/,'').trim() });
+      out.push({ title:t, year:y, director:(rows[j][iD]||'').trim(), genres:(rows[j][iG]||'').replace(/;/g,', ').replace(/, $/,'').trim(), epNo:epNo, airDate:(iR>=0?(rows[j][iR]||'').trim():'') });
     }
     if(out.length < 50) throw new Error('too few rows parsed');
     RW = out; sheetLive = true;
@@ -601,7 +633,8 @@ function money(n){ return n ? '$' + (n>=1e9 ? (n/1e9).toFixed(2)+'B' : Math.roun
 function movieCardHTML(m){
   var year = m.release_date ? m.release_date.slice(0,4) : '';
   var mine = myFind(m.title, year);
-  var onRW = rwFind(m.title, year);
+  var onRWAll = rwFindAll(m.title, year);
+  var onRW = onRWAll[0] || null;
   var onWL = wlFind(m.title, year);
   var directors = crewOf(m, ['Director']);
   var writers = crewOf(m, ['Screenplay','Writer','Story']).slice(0,4);
@@ -611,7 +644,7 @@ function movieCardHTML(m){
   var genres = (m.genres||[]).map(function(g){ return g.name; }).join(', ');
 
   var badges = '';
-  if(onRW) badges += '<span class="badge rw">🎙 On The Rewatchables</span>';
+  if(onRW) badges += '<span class="badge rw">🎙 On The Rewatchables' + (onRWAll.length>1 ? ' · ' + onRWAll.length + ' episodes' : '') + '</span>';
   if(mine) badges += '<span class="badge mine">★ ' + esc(mine.rating) + (mine.tier ? ' · ' + esc(mine.tier) : '') + '</span>';
   if(onWL) badges += '<span class="badge">📋 On watchlist</span>';
 
@@ -642,7 +675,14 @@ function movieCardHTML(m){
   buttons += '</div>';
 
   var poster = m.poster_path ? '<img class="poster" src="' + IMG + 'w342' + m.poster_path + '">' : '';
-  var rwNote = onRW && onRW.director ? '<div class="muted" style="font-size:12px;margin-top:2px">Episode entry: ' + esc(onRW.title) + ' (' + esc(onRW.year) + ')' + (onRW.genres ? ' · ' + esc(onRW.genres) : '') + '</div>' : '';
+  var rwNote = '';
+  if(onRW && onRW.director){
+    rwNote = '<div class="muted" style="font-size:12px;margin-top:2px">Episode entry: ' + esc(onRW.title) + ' (' + esc(onRW.year) + ')' + (onRW.genres ? ' · ' + esc(onRW.genres) : '') + '</div>';
+    if(onRWAll.length > 1){
+      var revisits = onRWAll.slice(1).map(function(ep){ return esc(ep.title) + (ep.airDate ? ' (' + esc(ep.airDate) + ')' : ''); }).join(', ');
+      rwNote += '<div class="muted" style="font-size:12px;margin-top:2px">Revisited on the show: ' + revisits + '</div>';
+    }
+  }
 
   var myNotes = '';
   if(mine){
@@ -657,7 +697,7 @@ function movieCardHTML(m){
     if(parts.length) myNotes = '<hr class="gold"><h3>My Notes</h3>' + parts.join('');
   }
 
-  var epSection = onRW ? '<hr class="gold"><h3>🎙 The Episode</h3><div id="epBox" class="muted"></div>' : '';
+  var epSection = onRW ? '<hr class="gold"><h3>🎙 The Rewatchables Episode</h3><div id="epBox" class="muted"></div>' : '';
   return '<div class="card"><div class="card-top">' + poster
     + '<div style="min-width:0;flex:1"><h2>' + esc(m.title) + '</h2>'
     + '<div class="meta">' + esc(year) + (genres ? ' · ' + esc(genres) : '') + '</div>'
@@ -721,7 +761,7 @@ function fillEpisodeBox(title){
       return;
     }
     var html = '';
-    eps.slice(0,2).forEach(function(ep){
+    eps.slice(0,3).forEach(function(ep){
       html += '<div style="margin-bottom:10px"><div style="font-size:13.5px;font-weight:500;color:var(--txt)">' + esc(ep.t) + '</div>'
         + '<div style="font-size:11.5px;margin:2px 0 6px">' + esc(ep.date) + '</div>'
         + (ep.url ? '<audio controls preload="none" style="width:100%" src="' + esc(ep.url) + '"></audio>' : spotifySearchLink(title))
@@ -736,28 +776,55 @@ function fillEpisodeBox(title){
 }
 
 /* ================= SEARCH ================= */
+function movieTileHTML(m){
+  var y = m.release_date ? m.release_date.slice(0,4) : '';
+  var idx = ref({ type:'movieById', id:m.id });
+  var img = m.poster_path ? '<img src="' + IMG + 'w185' + m.poster_path + '">' : '<div style="aspect-ratio:2/3;display:flex;align-items:center;justify-content:center;font-size:28px">🎞</div>';
+  var mine = myFind(m.title, y);
+  var onRW = rwFind(m.title, y);
+  return '<div class="poster-tile" data-action="movie" data-ref="' + idx + '">' + img
+    + '<div class="pt-t">' + esc(m.title) + '<div class="pt-y">' + esc(y) + (onRW ? ' · 🎙' : '') + (mine ? ' · ★' : '') + '</div></div></div>';
+}
+function personTileHTML(p){
+  var idx = ref({ type:'personById', id:p.id, name:p.name });
+  var img = p.profile_path ? '<img src="' + IMG + 'w185' + p.profile_path + '">' : '<div style="aspect-ratio:2/3;display:flex;align-items:center;justify-content:center;font-size:28px">🎭</div>';
+  var following = false, i;
+  for(i=0;i<PEOPLE.length;i++){ if(PEOPLE[i].name.toLowerCase() === p.name.toLowerCase()){ following = true; break; } }
+  return '<div class="poster-tile" data-action="person" data-ref="' + idx + '">' + img
+    + '<div class="pt-t">' + esc(p.name) + '<div class="pt-y">' + esc(p.known_for_department||'') + (following ? ' · ✓ following' : '') + '</div></div></div>';
+}
 function doSearch(){
   var q = el('q').value.trim();
   hideAC();
   if(!q) return;
+  showTab('search');
   el('cardBox').innerHTML = '';
   el('searchResults').innerHTML = '<p class="muted"><span class="spin"></span> Searching…</p>';
-  tmdb('search/movie', { query: q }).then(function(res){
-    var arr = (res.results||[]).slice(0,18);
-    if(!arr.length){ el('searchResults').innerHTML = '<p class="muted">No results for “' + esc(q) + '”.</p>'; return; }
-    var html = '';
-    for(var i=0;i<arr.length;i++){
-      var m = arr[i], y = m.release_date ? m.release_date.slice(0,4) : '';
-      var idx = ref({ type:'movieById', id:m.id });
-      var img = m.poster_path ? '<img src="' + IMG + 'w185' + m.poster_path + '">' : '<div style="aspect-ratio:2/3;display:flex;align-items:center;justify-content:center;font-size:28px">🎞</div>';
-      var mine = myFind(m.title, y);
-      var onRW = rwFind(m.title, y);
-      html += '<div class="poster-tile" data-action="movie" data-ref="' + idx + '">' + img
-        + '<div class="pt-t">' + esc(m.title) + '<div class="pt-y">' + esc(y) + (onRW ? ' · 🎙' : '') + (mine ? ' · ★' : '') + '</div></div></div>';
+  var movieReq = tmdb('search/movie', { query: q })
+    .then(function(res){ return { ok:true, arr:(res.results||[]).slice(0,12) }; })
+    .catch(function(e){ return { ok:false, err:e.message }; });
+  var personReq = tmdb('search/person', { query: q })
+    .then(function(res){ return { ok:true, arr:(res.results||[]).slice(0,8) }; })
+    .catch(function(e){ return { ok:false, err:e.message }; });
+  Promise.all([movieReq, personReq]).then(function(results){
+    var movies = results[0], people = results[1], html = '', i;
+    html += '<h3 style="margin-top:0">🎬 Films</h3>';
+    if(!movies.ok) html += '<p style="color:var(--red)">⚠️ Film search failed: ' + esc(movies.err) + '</p>';
+    else if(!movies.arr.length) html += '<p class="muted">No films for “' + esc(q) + '”.</p>';
+    else {
+      html += '<div class="results">';
+      for(i=0;i<movies.arr.length;i++) html += movieTileHTML(movies.arr[i]);
+      html += '</div>';
+    }
+    html += '<h3 style="margin-top:20px">👤 People</h3>';
+    if(!people.ok) html += '<p style="color:var(--red)">⚠️ People search failed: ' + esc(people.err) + '</p>';
+    else if(!people.arr.length) html += '<p class="muted">No people for “' + esc(q) + '”.</p>';
+    else {
+      html += '<div class="results">';
+      for(i=0;i<people.arr.length;i++) html += personTileHTML(people.arr[i]);
+      html += '</div>';
     }
     el('searchResults').innerHTML = html;
-  }).catch(function(e){
-    el('searchResults').innerHTML = '<p style="color:var(--red)">⚠️ Search failed: ' + esc(e.message) + '</p>';
   });
 }
 function updateAC(){
