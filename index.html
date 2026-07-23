@@ -1188,7 +1188,7 @@ function openMovieCard(tmdbId, skipNav){
     el('searchResults').innerHTML = '';
     window.scrollTo({ top: 0, behavior: 'smooth' });
     var epy = m.release_date ? m.release_date.slice(0,4) : '';
-    if(rwFind(m.title, epy)) fillEpisodeBox(m.title);
+    if(rwFind(m.title, epy)) fillEpisodeBox(m.title, epy ? Number(epy) : null);
   }).catch(function(e){
     el('cardBox').innerHTML = '<div class="card" style="border-color:var(--red)">⚠️ ' + esc(e.message) + '</div>';
   });
@@ -1226,22 +1226,10 @@ function movieCardHTML(m){
 
   var badges = '';
   if(onRW){
-    badges += '<span class="badge rw">🎙 On The Rewatchables' + (onRWAll.length>1 ? ' · ' + onRWAll.length + ' episodes' : '') + '</span>';
-    // Spotify/Apple both support pre-filled search URLs, which reliably surface the right episode
-    // near the top of results without needing any API call. Netflix has no equivalent search deep
-    // link, so that one just goes to the show page (the 2026 Netflix/Spotify video-podcast deal
-    // put the full show there, just not per-episode-addressable via any public API).
-    var pq = encodeURIComponent('The Rewatchables ' + m.title);
-    // data-action here is just a piggyback for click logging (see logPodcastClick) -- the anchors
-    // still navigate normally via their real href/target, nothing about default link behavior
-    // is intercepted or delayed by it.
-    var spIdx = ref({ type:'podlink', platform:'spotify', title:m.title, year:year });
-    var apIdx = ref({ type:'podlink', platform:'apple', title:m.title, year:year });
-    var nfIdx = ref({ type:'podlink', platform:'netflix', title:m.title, year:year });
-    badges += '<a class="badge-link" href="https://open.spotify.com/search/' + pq + '" target="_blank" rel="noopener" title="Search this episode on Spotify" data-action="podlink" data-ref="' + spIdx + '">🟢 Spotify</a>';
-    badges += '<a class="badge-link" href="https://podcasts.apple.com/us/search?term=' + pq + '" target="_blank" rel="noopener" title="Search this episode on Apple Podcasts" data-action="podlink" data-ref="' + apIdx + '">🎧 Apple</a>';
-    badges += '<a class="badge-link" href="https://www.netflix.com/title/82185765" target="_blank" rel="noopener" title="The Rewatchables on Netflix" data-action="podlink" data-ref="' + nfIdx + '">📺 Netflix</a>';
-    badges += '<span class="badge-link" data-action="listenep" title="Jump to the embedded player below">▶ Listen</span>';
+    // The badge itself is the jump-to-episode-section link now (used to be a separate "Listen"
+    // badge next to it) -- the platform icons live down in that section, next to each episode's
+    // Play button, instead of cluttering the top of the card.
+    badges += '<span class="badge rw" style="cursor:pointer" data-action="listenep" title="Jump to the episode section below">🎙 On The Rewatchables' + (onRWAll.length>1 ? ' · ' + onRWAll.length + ' episodes' : '') + '</span>';
   }
   if(mine){
     var mineIdx = ref({ type:'ratemovie', movie:m });
@@ -1579,7 +1567,24 @@ function loadClickStats(){
     box.innerHTML = html;
   }).catch(function(e){ box.textContent = 'Could not load: ' + e.message; });
 }
-function fillEpisodeBox(title){
+// Spotify/Apple both support pre-filled search URLs, which reliably surface the right episode
+// near the top of results without needing any API call. Netflix has no equivalent search deep
+// link, so that one just goes to the show page (the 2026 Netflix/Spotify video-podcast deal put
+// the full show there, just not per-episode-addressable via any public API). data-action here is
+// just a piggyback for click logging (see logPodcastClick) -- the anchors still navigate normally
+// via their real href/target, nothing about default link behavior is intercepted or delayed.
+function podcastIconsHTML(searchText, movieTitle, movieYear){
+  var pq = encodeURIComponent(searchText);
+  var spIdx = ref({ type:'podlink', platform:'spotify', title:movieTitle, year:movieYear });
+  var apIdx = ref({ type:'podlink', platform:'apple', title:movieTitle, year:movieYear });
+  var nfIdx = ref({ type:'podlink', platform:'netflix', title:movieTitle, year:movieYear });
+  return '<div style="display:flex;gap:6px;margin:8px 0">'
+    + '<a class="badge-link" href="https://open.spotify.com/search/' + pq + '" target="_blank" rel="noopener" title="Search on Spotify" data-action="podlink" data-ref="' + spIdx + '">🟢 Spotify</a>'
+    + '<a class="badge-link" href="https://podcasts.apple.com/us/search?term=' + pq + '" target="_blank" rel="noopener" title="Search on Apple Podcasts" data-action="podlink" data-ref="' + apIdx + '">🎧 Apple</a>'
+    + '<a class="badge-link" href="https://www.netflix.com/title/82185765" target="_blank" rel="noopener" title="The Rewatchables on Netflix" data-action="podlink" data-ref="' + nfIdx + '">📺 Netflix</a>'
+    + '</div>';
+}
+function fillEpisodeBox(title, movieYear){
   var box = el('epBox');
   if(!box) return;
   box.innerHTML = '<span class="spin"></span> Checking the feed\u2026';
@@ -1588,7 +1593,8 @@ function fillEpisodeBox(title){
     if(!box) return;
     var eps = findEpisodes(title);
     if(!eps.length){
-      box.innerHTML = spotifySearchLink(title) + '<div style="font-size:11.5px;margin-top:4px">The public feed only carries recent episodes \u2014 the full archive lives on Spotify.</div>';
+      box.innerHTML = spotifySearchLink(title) + podcastIconsHTML('The Rewatchables ' + title, title, movieYear)
+        + '<div style="font-size:11.5px;margin-top:4px">The public feed only carries recent episodes \u2014 the full archive lives on Spotify.</div>';
       return;
     }
     var html = '';
@@ -1597,13 +1603,14 @@ function fillEpisodeBox(title){
       html += '<div style="margin-bottom:10px"><div style="font-size:13.5px;font-weight:500;color:var(--txt)">' + esc(ep.t) + '</div>'
         + '<div style="font-size:11.5px;margin:2px 0 6px">' + esc(ep.date) + '</div>'
         + (ep.url ? '<button class="btn btn-outline btn-sm" data-action="playep" data-ref="' + playIdx + '">▶ Play episode</button>' : spotifySearchLink(title))
-        + (ep.desc ? '<details style="margin-top:6px"><summary style="cursor:pointer;font-size:12px">Episode notes</summary><p style="font-size:12.5px;margin-top:6px">' + esc(ep.desc.slice(0,700)) + '</p></details>' : '')
+        + podcastIconsHTML(ep.t, title, movieYear)
+        + (ep.desc ? '<details style="margin-top:2px"><summary style="cursor:pointer;font-size:12px">Episode notes</summary><p style="font-size:12.5px;margin-top:6px">' + esc(ep.desc.slice(0,700)) + '</p></details>' : '')
         + '</div>';
     });
     box.innerHTML = html;
   }).catch(function(e){
     box = el('epBox');
-    if(box) box.innerHTML = '\u26A0\uFE0F Feed unavailable (' + esc(e.message) + ') \u00B7 ' + spotifySearchLink(title);
+    if(box) box.innerHTML = '\u26A0\uFE0F Feed unavailable (' + esc(e.message) + ') \u00B7 ' + spotifySearchLink(title) + podcastIconsHTML('The Rewatchables ' + title, title, movieYear);
   });
 }
 
