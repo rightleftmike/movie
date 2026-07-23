@@ -797,7 +797,10 @@ function tmdb(path, params){
 }
 function tmdbMovie(id){
   if(movieCache[id]) return Promise.resolve(movieCache[id]);
-  return tmdb('movie/' + id, { append_to_response: 'credits' }).then(function(m){ movieCache[id]=m; return m; });
+  // watch/providers rides along on the same request (TMDB supports nested append_to_response
+  // paths) -- this is JustWatch's own data, the same source powering their site, so it's accurate
+  // without needing a second fetch or a separate loading spinner.
+  return tmdb('movie/' + id, { append_to_response: 'credits,watch/providers' }).then(function(m){ movieCache[id]=m; return m; });
 }
 function tmdbPerson(id){
   if(personCache[id]) return Promise.resolve(personCache[id]);
@@ -1231,6 +1234,7 @@ function movieCardHTML(m){
   if(directors.length){ chips += '<label>Director</label><div class="chips">' + directors.map(function(p){ return personChip(p); }).join('') + '</div>'; }
   if(writers.length){ chips += '<label>Writers</label><div class="chips">' + writers.map(function(p){ return personChip(p, p.job); }).join('') + '</div>'; }
   if(dps.length){ chips += '<label>Cinematography</label><div class="chips">' + dps.map(function(p){ return personChip(p); }).join('') + '</div>'; }
+  var watchSection = watchProvidersHTML(m['watch/providers'] && m['watch/providers'].results && m['watch/providers'].results.US);
 
   var castHtml = '';
   for(var i=0;i<cast.length;i++){
@@ -1286,8 +1290,43 @@ function movieCardHTML(m){
     + '<p class="muted" style="margin-top:8px;font-size:13px">' + esc((m.overview||'').slice(0,260)) + '</p>'
     + '</div></div>'
     + chips
+    + watchSection
     + (castHtml ? '<label>Cast</label><div class="cast-strip">' + castHtml + '</div>' : '')
     + buttons + epSection + myNotes + '</div>';
+}
+// Streaming/rental/purchase availability, sourced from JustWatch via TMDB's watch/providers data
+// (the same feed JustWatch's own site runs on, bundled onto the movie fetch above). Deliberately
+// does NOT try to construct direct links to individual services (e.g. guessing a Netflix title
+// URL) -- TMDB's API terms require routing through their own watch page for this data, and hand
+// -built deep links are exactly the kind of unreliable guesswork that would turn this into the
+// "rabbit chase" this was built to avoid. The one link here is TMDB's own maintained page.
+function watchProvidersHTML(wp){
+  var html = '<hr class="gold"><h3>📺 Where to Watch</h3>';
+  var groups = [
+    { key:'flatrate', label:'Stream' },
+    { key:'free', label:'Free' },
+    { key:'ads', label:'Free with ads' },
+    { key:'rent', label:'Rent' },
+    { key:'buy', label:'Buy' }
+  ];
+  var any = false;
+  if(wp){
+    groups.forEach(function(g){
+      var list = wp[g.key];
+      if(!list || !list.length) return;
+      any = true;
+      html += '<div style="margin-top:6px"><label style="font-size:11px">' + g.label + '</label><div class="chips" style="margin-top:4px">'
+        + list.map(function(p){
+            var logo = p.logo_path ? '<img src="' + IMG + 'w45' + p.logo_path + '" style="width:20px;height:20px;border-radius:5px;vertical-align:middle;margin-right:5px">' : '';
+            return '<span class="chip" style="cursor:default">' + logo + esc(p.provider_name) + '</span>';
+          }).join('')
+        + '</div></div>';
+    });
+  }
+  if(!any) html += '<p class="muted" style="font-size:12.5px;margin-top:6px">Not currently available to stream, rent, or buy in the US (per JustWatch/TMDB) — this can lag real-world availability by a few days.</p>';
+  if(wp && wp.link) html += '<a href="' + esc(wp.link) + '" target="_blank" rel="noopener" style="font-size:12px;display:inline-block;margin-top:8px">View all options on TMDB →</a>';
+  html += '<p class="muted" style="font-size:10.5px;margin-top:6px">Streaming data by JustWatch, via TMDB.</p>';
+  return html;
 }
 
 /* ================= AGE / ERA PHOTOS (free feature -- no AI, no paid API) =================
