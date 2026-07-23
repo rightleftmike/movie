@@ -92,13 +92,18 @@ label{font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:.0
 .rcard{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:11px 12px}
 .rcard:hover{border-color:var(--gold-dim)}
 .rcard-main{cursor:pointer}
+.rcard-main:hover .rt{text-decoration:underline}
 .rcard .rt{font-weight:700;font-size:14px;line-height:1.25}
 .rcard .ry{color:var(--dim);font-size:12px}
 .rcard .rr{margin-top:6px;font-size:12px;color:var(--gold)}
+.rcard .rr:hover{text-decoration:underline;color:#e0c574}
 .rcard .noteflag{float:right;font-size:13px;color:var(--gold)}
+.rcard .noteflag:hover{color:#e0c574}
 .rowlist{display:flex;flex-direction:column;gap:6px}
 .rowitem{display:flex;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:9px 12px}
 .rowitem .grow{flex:1;min-width:0;cursor:pointer}
+.rowitem .grow:hover .t{text-decoration:underline}
+.rowitem .badge.mine:hover,.sugbadge .badge.mine:hover{text-decoration:underline;color:#e0c574}
 .rowitem .t{font-weight:500;font-size:14px}
 .rowitem .s{color:var(--dim);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .quickrate{display:flex;flex-direction:column;align-items:flex-end;gap:3px}
@@ -825,9 +830,10 @@ function renderRatings(){
     var idx = ref({ type:'movie', title:r.title, year:r.year });
     var ridx = ref({ type:'ratefilm', title:r.title, year:r.year });
     // Two separate click targets, same pattern as the Show List row: the title/year area opens
-    // the full movie detail card, the star line opens the rating form to view/edit the review.
+    // the full movie detail card, the star line (and the pencil, when there's a written review)
+    // opens the rating form to view/edit the review.
     html += '<div class="rcard">'
-      + (hasNotes ? '<span class="noteflag" title="Full review written">✎</span>' : '')
+      + (hasNotes ? '<span class="noteflag" style="cursor:pointer" data-action="rate" data-ref="' + ridx + '" title="Review written — click to view">✎</span>' : '')
       + '<div class="rcard-main" data-action="movie" data-ref="' + idx + '">'
       + '<div class="rt">' + esc(r.title) + '</div><div class="ry">' + esc(r.year||'') + '</div></div>'
       + '<div class="rr" style="cursor:pointer" data-action="rate" data-ref="' + ridx + '" title="View / edit review">' + starsFor(r.rating) + '</div>'
