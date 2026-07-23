@@ -327,6 +327,36 @@ var SUG_MODE = 'general';
 var sheetLive = false;
 var movieCache = {}, personCache = {};
 
+/* ================= BROWSER BACK/FORWARD NAVIGATION =================
+   Plain tab switches and opening a movie card both push a history entry, so the browser's
+   Back button returns you to the list you were just looking at (Show List / Suggest / My
+   Ratings / etc.) instead of leaving the app entirely. NAV_REPLAY guards against re-pushing
+   a new entry while we're already replaying one from a popstate event. */
+var CURRENT_TAB = 'ratings'; // matches the panel with class "on" in the initial HTML
+var NAV_REPLAY = false;
+var NAV_INITED = false;
+function navPushTab(tab){
+  if(NAV_REPLAY) return;
+  history.pushState({ view:'tab', tab: tab }, '', '#' + tab);
+}
+function navPushMovie(id, title, year){
+  if(NAV_REPLAY) return;
+  history.pushState({ view:'movie', id: id || null, title: title || null, year: year || null }, '', '#movie');
+}
+function initNav(){
+  if(NAV_INITED) return;
+  NAV_INITED = true;
+  history.replaceState({ view:'tab', tab: CURRENT_TAB }, '', '#' + CURRENT_TAB);
+  window.addEventListener('popstate', function(ev){
+    var st = ev.state;
+    NAV_REPLAY = true;
+    try{
+      if(!st || st.view==='tab') showTab(st && st.tab ? st.tab : 'ratings');
+      else if(st.view==='movie'){ if(st.id) openMovieCard(st.id, true); else openMovieByTitle(st.title, st.year); }
+    } finally { NAV_REPLAY = false; }
+  });
+}
+
 function ref(obj){ REF.push(obj); return REF.length - 1; }
 
 /* ================= UTILS ================= */
@@ -544,6 +574,7 @@ function enterApp(){
   renderUserBox();
   setSubtitle();
   renderAiPlanStatus();
+  initNav();
   if(!BOOTED){ BOOTED = true; loadCloud(); loadSheet(); }
 }
 function sendMagicLink(){
@@ -860,16 +891,18 @@ function loadPersonThumb(p){
 
 /* ================= MOVIE CARD ================= */
 function openMovieByTitle(title, year){
+  navPushMovie(null, title, year);
   el('cardBox').innerHTML = '<div class="card"><span class="spin"></span> Loading ' + esc(title) + '…</div>';
   showTab('search');
   findMovie(title, year).then(function(hit){
     if(!hit) throw new Error('Not found on TMDB: ' + title);
-    return openMovieCard(hit.id);
+    return openMovieCard(hit.id, true);
   }).catch(function(e){
     el('cardBox').innerHTML = '<div class="card" style="border-color:var(--red)">⚠️ ' + esc(e.message) + '</div>';
   });
 }
-function openMovieCard(tmdbId){
+function openMovieCard(tmdbId, skipNav){
+  if(!skipNav) navPushMovie(tmdbId, null, null);
   el('cardBox').innerHTML = '<div class="card"><span class="spin"></span> Loading…</div>';
   showTab('search');
   return tmdbMovie(tmdbId).then(function(m){
@@ -1562,6 +1595,7 @@ function peopleSearch(){
 
 /* ================= TABS / EXPORT / SETTINGS ================= */
 function showTab(name){
+  CURRENT_TAB = name;
   document.querySelectorAll('.tab').forEach(function(t){ t.classList.toggle('on', t.getAttribute('data-tab')===name); });
   document.querySelectorAll('.panel').forEach(function(p){ p.classList.toggle('on', p.id==='p-'+name); });
   if(name==='ratings') renderRatings();
@@ -1594,7 +1628,7 @@ document.addEventListener('click', function(ev){
   if(!t) return;
   var action = t.getAttribute('data-action');
   var r = t.hasAttribute('data-ref') ? REF[Number(t.getAttribute('data-ref'))] : null;
-  if(action==='tab') showTab(t.getAttribute('data-tab'));
+  if(action==='tab'){ var tabName = t.getAttribute('data-tab'); if(tabName !== CURRENT_TAB) navPushTab(tabName); showTab(tabName); }
   else if(action==='dosearch') doSearch();
   else if(action==='movie'){
     hideAC();
