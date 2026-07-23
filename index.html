@@ -1186,7 +1186,7 @@ function movieCardHTML(m){
     var followedC = isFollowed(c.name);
     var ring = followedC ? ' followed-ring' : '';
     var img = c.profile_path ? '<img class="' + ring.trim() + '" src="' + IMG + 'w185' + c.profile_path + '">' : '<div class="cast-noimg' + ring + '">🎭</div>';
-    var aidx = ref({ type:'ageinfo', id:c.id, name:c.name, movieYear:year?Number(year):null, character:c.character||'', movieTitle:m.title });
+    var aidx = ref({ type:'ageinfo', id:c.id, name:c.name, movieYear:year?Number(year):null, character:c.character||'', movieTitle:m.title, movieId:m.id });
     castHtml += '<div class="cast-card" data-action="person" data-ref="' + cidx + '"' + (followedC?' title="Following"':'') + '>'
       + '<span class="age-btn" data-action="ageinfo" data-ref="' + aidx + '" title="Age + photos around ' + esc(year||'') + '">i</span>'
       + img + '<div class="cn">' + esc(c.name) + '</div><div class="cc">' + esc(c.character||'') + '</div></div>';
@@ -1238,14 +1238,14 @@ function movieCardHTML(m){
    year via Wikimedia Commons' free "Category:{Name} in {Year}" convention. That convention only
    exists for well-documented public figures, so most cast members will fall back to their
    regular TMDB gallery photos, clearly labeled as not era-specific rather than implying they are.
-   Right: a best-effort search for stills of the actor specifically as their character in this
-   movie (e.g. "Michael Ironside as Richter, Total Recall"), via free-text search over Wikimedia
-   Commons file pages -- there's no API that cleanly indexes "photos of character X in film Y", so
-   this runs a few progressively broader queries and takes the first that returns anything. Real
-   coverage exists for iconic/heavily-documented films but is thin or empty for most others, so
-   results are always labeled as a best-effort search rather than guaranteed matches. */
+   Right: a search for stills of the actor specifically as their character in this movie (e.g.
+   "Robert De Niro as Neil McCauley, Heat"), via a real Google Images search (Serper.dev), proxied
+   through a Supabase edge function so the API key never reaches the browser. Results are cached
+   forever in Supabase keyed by actor+movie, since a given actor/character/movie combination never
+   changes -- each cast member is only ever actually searched once, no matter how many times the
+   photos get viewed afterward. */
 function closeAgeInfo(){ el('ageVeil').classList.remove('open'); }
-function showAgeInfo(id, name, movieYear, character, movieTitle){
+function showAgeInfo(id, name, movieYear, character, movieTitle, movieId){
   el('ageModal').innerHTML = '<button class="modal-x" data-action="closeage" title="Close">✕</button>'
     + '<h3 style="margin-top:0">' + esc(name) + '</h3>'
     + '<p class="muted" style="margin-top:4px"><span class="spin"></span> Loading…</p>';
@@ -1264,7 +1264,7 @@ function showAgeInfo(id, name, movieYear, character, movieTitle){
       + '<div id="agePhotos"><p class="muted" style="margin-top:8px"><span class="spin"></span> Finding photos from around ' + esc(movieYear||'') + '…</p></div>'
       + charSection;
     loadAgePhotos(id, name, movieYear);
-    if(character && movieTitle) loadCharacterPhotos(name, character, movieTitle);
+    if(character && movieTitle) loadCharacterPhotos(id, name, character, movieId, movieTitle);
   }).catch(function(){
     el('ageModal').innerHTML = '<button class="modal-x" data-action="closeage" title="Close">✕</button><h3 style="margin-top:0">' + esc(name) + '</h3><p style="color:var(--red)">⚠️ Could not load info</p>';
   });
@@ -1321,47 +1321,40 @@ function paintAgePhotos(photos, label){
   });
   box.innerHTML = html + '</div>';
 }
-// Free-text search over Wikimedia Commons file pages (namespace 6). Unlike the year-category
-// lookup above, this has no structured convention to rely on -- it's just full-text search, so
-// results are hit-or-miss and not verified to actually depict the character.
-function fetchCommonsSearchPhotos(query, limit){
-  var url = 'https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch='
-    + encodeURIComponent(query) + '&gsrnamespace=6&gsrlimit=' + (limit||12)
-    + '&prop=imageinfo&iiprop=url|thumburl&iiurlwidth=300&format=json&origin=*';
-  return fetch(url).then(function(r){ return r.json(); }).then(function(data){
-    var pages = (data.query && data.query.pages) || {};
-    var out = [];
-    Object.keys(pages).forEach(function(k){
-      var ii = pages[k].imageinfo && pages[k].imageinfo[0];
-      var full = ii && ii.url;
-      if(full && /\.(jpg|jpeg|png)$/i.test(full)) out.push({ thumb: ii.thumburl || full, full: full });
+// Real Google Images search via Serper.dev, proxied through the character-photos edge function
+// (which holds the API key server-side, checks/writes the Supabase cache, and enforces a daily
+// cost backstop). Requires sign-in, same as the AI features, since every uncached lookup costs
+// a real (small) amount of money once past Serper's free tier.
+function loadCharacterPhotos(personId, actorName, character, movieId, movieTitle){
+  if(!SUPA || !ME){ paintCharacterPhotos(null, character, 'Sign in to search for character stills.'); return; }
+  SUPA.auth.getSession().then(function(res){
+    var session = res.data && res.data.session;
+    if(!session) throw new Error('Not signed in');
+    return fetch(SB_URL + '/functions/v1/character-photos', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + session.access_token, 'content-type': 'application/json' },
+      body: JSON.stringify({ personId: personId, personName: actorName, character: character, movieId: movieId, movieTitle: movieTitle })
     });
-    return out;
-  }).catch(function(){ return []; });
-}
-function loadCharacterPhotos(actorName, character, movieTitle){
-  var queries = [
-    actorName + ' as ' + character + ' ' + movieTitle,
-    character + ' ' + movieTitle,
-    actorName + ' ' + movieTitle
-  ];
-  function tryQuery(i){
-    if(i >= queries.length){ paintCharacterPhotos([], character); return; }
-    fetchCommonsSearchPhotos(queries[i], 12).then(function(photos){
-      if(photos.length) paintCharacterPhotos(photos.slice(0,10), character);
-      else tryQuery(i + 1);
+  }).then(function(r){
+    return r.json().catch(function(){ return {}; }).then(function(j){
+      if(!r.ok) throw new Error(j.error || ('Search failed (' + r.status + ')'));
+      return j.photos || [];
     });
-  }
-  tryQuery(0);
+  }).then(function(photos){
+    paintCharacterPhotos(photos, character);
+  }).catch(function(e){
+    paintCharacterPhotos(null, character, e.message || 'Could not search for stills');
+  });
 }
-function paintCharacterPhotos(photos, character){
+function paintCharacterPhotos(photos, character, errorMsg){
   var box = el('ageCharPhotos');
   if(!box) return;
-  if(!photos.length){
-    box.innerHTML = '<p class="muted" style="margin-top:4px;font-size:11px">No stills found' + (character ? ' for ' + esc(character) : '') + ' — this search only turns up results for heavily-documented films.</p>';
+  if(errorMsg){ box.innerHTML = '<p class="muted" style="margin-top:4px;font-size:11px">' + esc(errorMsg) + '</p>'; return; }
+  if(!photos || !photos.length){
+    box.innerHTML = '<p class="muted" style="margin-top:4px;font-size:11px">No stills found' + (character ? ' for ' + esc(character) : '') + '.</p>';
     return;
   }
-  var label = 'As ' + esc(character) + ' (best-effort search, Wikimedia Commons)';
+  var label = 'As ' + esc(character) + ' (Google Images search)';
   var html = '<div class="muted" style="font-size:11px;margin-top:4px">' + label + '</div><div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">';
   photos.forEach(function(p){
     var pidx = ref({ type:'viewphoto', url:p.full });
@@ -2199,7 +2192,7 @@ document.addEventListener('click', function(ev){
   }
   else if(action==='closedrawer') closeDrawer();
   else if(action==='closemodal') attemptCloseModal();
-  else if(action==='ageinfo'){ if(r) showAgeInfo(r.id, r.name, r.movieYear, r.character, r.movieTitle); }
+  else if(action==='ageinfo'){ if(r) showAgeInfo(r.id, r.name, r.movieYear, r.character, r.movieTitle, r.movieId); }
   else if(action==='closeage') closeAgeInfo();
   else if(action==='viewphoto'){ if(r) openLightbox(r.url); }
   else if(action==='closelightbox') closeLightbox();
