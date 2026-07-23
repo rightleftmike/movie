@@ -1334,6 +1334,7 @@ function renderRatingForm(keepVals){
   // erase a real in-progress edit's dirty flag.
   if(FORM.snapshot == null) FORM.snapshot = JSON.stringify(collectForm());
   wireMicButtons();
+  wireStandoutRecognition();
 }
 function taBlock(id, label, value, placeholder){
   var ph = placeholder ? ' placeholder="' + esc(placeholder) + '"' : '';
@@ -1478,6 +1479,31 @@ function wireMicButtons(){
     });
   }
 }
+
+// Reverse-engineers the cast-chip click behavior: as the Standout performance text changes
+// (typed, dictated, or pasted from a refined-notes rewrite), check it for cast names. Any
+// recognized name lights up gold as a cast chip AND gets pushed into "People to follow" (gold
+// there too), same as tapping the chip -- just triggered by the text instead of the click.
+function syncStandoutRecognition(){
+  var box = el('rf_actor');
+  if(!box || !FORM) return;
+  var text = box.value.toLowerCase();
+  document.querySelectorAll('[data-action="castchip"]').forEach(function(chipEl){
+    var name = chipEl.textContent.trim();
+    chipEl.classList.toggle('sel', !!name && text.indexOf(name.toLowerCase()) >= 0);
+  });
+  document.querySelectorAll('[data-action="togglefollow"]').forEach(function(chipEl){
+    var name = chipEl.textContent.trim();
+    if(!name) return;
+    if(text.indexOf(name.toLowerCase()) >= 0 && !FORM.follow[name]) FORM.follow[name] = 1;
+    if(FORM.follow[name]) chipEl.classList.add('sel');
+  });
+}
+function wireStandoutRecognition(){
+  var box = el('rf_actor');
+  if(box) box.addEventListener('input', syncStandoutRecognition);
+  syncStandoutRecognition();
+}
 function toggleDictation(targetId, btn){
   if(!SpeechRec) return;
   if(DICTATION && DICTATION.targetId === targetId){ DICTATION.rec.stop(); return; }
@@ -1497,6 +1523,7 @@ function toggleDictation(targetId, btn){
     }
     var joinedBase = baseValue && !/\s$/.test(baseValue) ? baseValue + ' ' : baseValue;
     box.value = joinedBase + finalTxt + interimTxt;
+    if(targetId === 'rf_actor') syncStandoutRecognition();
   };
   rec.onerror = function(ev){
     toast('⚠️ Voice input error: ' + (ev.error || 'unknown'), 'err');
@@ -1765,20 +1792,14 @@ document.addEventListener('click', function(ev){
     if(n && r) quickRate(r.title, r.year, n);
   }
   else if(action==='refine') refineNotes();
-  else if(action==='userefined'){ var f=REFINE_FIELD_IDS[r.field]; if(FORM && FORM.refined && el(f)){ el(f).value = FORM.refined[r.field]||''; t.style.borderColor='var(--green)'; } }
-  else if(action==='userefinedall'){ if(FORM && FORM.refined){ Object.keys(REFINE_FIELD_IDS).forEach(function(k){ if(FORM.refined[k] && el(REFINE_FIELD_IDS[k]) && el(REFINE_FIELD_IDS[k]).value) el(REFINE_FIELD_IDS[k]).value = FORM.refined[k]; }); toast('Applied refined notes','ok'); } }
+  else if(action==='userefined'){ var f=REFINE_FIELD_IDS[r.field]; if(FORM && FORM.refined && el(f)){ el(f).value = FORM.refined[r.field]||''; t.style.borderColor='var(--green)'; if(f==='rf_actor') syncStandoutRecognition(); } }
+  else if(action==='userefinedall'){ if(FORM && FORM.refined){ Object.keys(REFINE_FIELD_IDS).forEach(function(k){ if(FORM.refined[k] && el(REFINE_FIELD_IDS[k]) && el(REFINE_FIELD_IDS[k]).value) el(REFINE_FIELD_IDS[k]).value = FORM.refined[k]; }); syncStandoutRecognition(); toast('Applied refined notes','ok'); } }
   else if(action==='castchip'){
-    var box = el('rf_actor'); if(box){ box.value = box.value ? box.value + ', ' + r.name : r.name; }
     // Naming someone a standout performance also puts them forward to follow -- one tap does
-    // both. If they're already in the People-to-follow chips (below), sync that chip's look too;
-    // if they're outside that shortlist (e.g. deep cast), they're still followed on Save.
-    if(FORM && !FORM.follow[r.name]){
-      FORM.follow[r.name] = 1;
-      var followChipsEls = document.querySelectorAll('[data-action="togglefollow"]');
-      for(var fi=0; fi<followChipsEls.length; fi++){
-        if(followChipsEls[fi].textContent.trim() === r.name){ followChipsEls[fi].classList.add('sel'); break; }
-      }
-    }
+    // both, same as typing/dictating their name would (syncStandoutRecognition handles both the
+    // cast-chip gold state and the People-to-follow gold state / auto-follow).
+    var box = el('rf_actor'); if(box){ box.value = box.value ? box.value + ', ' + r.name : r.name; }
+    syncStandoutRecognition();
   }
   else if(action==='togglefollow'){ if(FORM){ if(FORM.follow[r.name]) delete FORM.follow[r.name]; else FORM.follow[r.name]=1; t.classList.toggle('sel'); } }
   else if(action==='wladd'){ addWatchlist(r.title, r.year, r.source); }
