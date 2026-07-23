@@ -66,6 +66,8 @@ label{font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:.0
 .badge{font-size:11.5px;padding:3px 9px;border-radius:12px;border:1px solid var(--line);color:var(--dim)}
 .badge.rw{border-color:var(--gold-dim);color:var(--gold)}
 .badge.mine{background:var(--gold);color:#171307;border-color:var(--gold);font-weight:700}
+.badge-link{font-size:11px;padding:3px 8px;border-radius:12px;border:1px solid var(--line);color:var(--dim);text-decoration:none;cursor:pointer;display:inline-flex;align-items:center;gap:3px}
+.badge-link:hover{border-color:var(--gold-dim);color:var(--gold)}
 .stars{letter-spacing:1px}
 .meta{color:var(--dim);font-size:13px;margin-top:2px}
 .facts{display:flex;flex-wrap:wrap;gap:10px;margin-top:10px;font-size:12.5px;color:var(--dim)}
@@ -140,6 +142,12 @@ label{font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:.0
 .mic-btn.listening{color:var(--red);border-color:var(--red);animation:micpulse 1s ease-in-out infinite}
 @keyframes micpulse{0%,100%{opacity:1}50%{opacity:.45}}
 .formgrid{display:grid;grid-template-columns:1fr 1fr;gap:0 12px}
+.mini-player{position:fixed;left:0;right:0;bottom:-100px;background:var(--panel2);border-top:1px solid var(--gold-dim);z-index:95;padding:8px 14px;display:flex;align-items:center;gap:10px;transition:bottom .22s ease;box-shadow:0 -8px 24px #000b}
+.mini-player.open{bottom:0}
+.mini-player .mp-title{font-size:12.5px;color:var(--gold);flex-shrink:0;max-width:32vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mini-player audio{flex:1;min-width:0;height:32px}
+.mini-player .mp-x{background:none;border:none;color:var(--dim);font-size:18px;cursor:pointer;padding:2px 8px;flex-shrink:0}
+.mini-player .mp-x:hover{color:var(--txt)}
 .toast-box{position:fixed;bottom:14px;left:50%;transform:translateX(-50%);z-index:99;display:flex;flex-direction:column;gap:6px;width:min(440px,92vw)}
 .toast{padding:11px 15px;border-radius:10px;font-size:13.5px;background:var(--panel2);border:1px solid var(--line);box-shadow:0 8px 24px #000b}
 .toast.err{border-color:var(--red);color:#e8b0a6}
@@ -299,6 +307,11 @@ body.preauth header, body.preauth #appWrap{display:none!important}
 <div class="modal-veil" id="modalVeil"><div class="modal" id="modal"></div></div>
 <div class="modal-veil" id="ageVeil"><div class="modal" id="ageModal" style="max-width:380px"></div></div>
 <div class="modal-veil" id="lbVeil" data-action="closelightbox" style="z-index:90"><img id="lbImg" style="max-width:92vw;max-height:92vh;display:block;margin:40px auto;border-radius:8px"></div>
+<div class="mini-player" id="miniPlayer">
+  <div class="mp-title" id="mpTitle"></div>
+  <audio id="mpAudio" controls preload="none"></audio>
+  <button class="mp-x" data-action="closeplayer" title="Stop and close">✕</button>
+</div>
 <div class="toast-box" id="toasts"></div>
 
 <div id="bootLoading" style="position:fixed;inset:0;background:var(--bg);z-index:210;display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:14px"><span class="spin"></span>&nbsp;&nbsp;Loading your Screening Room…</div>
@@ -1165,7 +1178,18 @@ function movieCardHTML(m){
   var genres = (m.genres||[]).map(function(g){ return g.name; }).join(', ');
 
   var badges = '';
-  if(onRW) badges += '<span class="badge rw">🎙 On The Rewatchables' + (onRWAll.length>1 ? ' · ' + onRWAll.length + ' episodes' : '') + '</span>';
+  if(onRW){
+    badges += '<span class="badge rw">🎙 On The Rewatchables' + (onRWAll.length>1 ? ' · ' + onRWAll.length + ' episodes' : '') + '</span>';
+    // Spotify/Apple both support pre-filled search URLs, which reliably surface the right episode
+    // near the top of results without needing any API call. Netflix has no equivalent search deep
+    // link, so that one just goes to the show page (the 2026 Netflix/Spotify video-podcast deal
+    // put the full show there, just not per-episode-addressable via any public API).
+    var pq = encodeURIComponent('The Rewatchables ' + m.title);
+    badges += '<a class="badge-link" href="https://open.spotify.com/search/' + pq + '" target="_blank" rel="noopener" title="Search this episode on Spotify">🟢 Spotify</a>';
+    badges += '<a class="badge-link" href="https://podcasts.apple.com/us/search?term=' + pq + '" target="_blank" rel="noopener" title="Search this episode on Apple Podcasts">🎧 Apple</a>';
+    badges += '<a class="badge-link" href="https://www.netflix.com/title/82185765" target="_blank" rel="noopener" title="The Rewatchables on Netflix">📺 Netflix</a>';
+    badges += '<span class="badge-link" data-action="listenep" title="Jump to the embedded player below">▶ Listen</span>';
+  }
   if(mine){
     var mineIdx = ref({ type:'ratemovie', movie:m });
     badges += '<span class="badge mine" style="cursor:pointer" data-action="rate" data-ref="' + mineIdx + '" title="View / edit review">' + starsFor(mine.rating) + '</span>';
@@ -1431,6 +1455,28 @@ function spotifySearchLink(title){
   var s = 'https://open.spotify.com/search/' + encodeURIComponent('The Rewatchables ' + title);
   return '<a href="' + s + '" target="_blank" rel="noopener">Find the episode on Spotify \u2192</a>';
 }
+// One <audio> element, living outside the app's re-rendered content (see #miniPlayer in the base
+// HTML, a sibling of the modal veils), so playback survives switching tabs or opening a different
+// movie -- the per-episode "Play" buttons all route through this instead of embedding their own
+// <audio> tag, which would get destroyed the moment the card re-renders.
+function playEpisode(title, url){
+  var audio = el('mpAudio');
+  if(!audio) return;
+  el('mpTitle').textContent = title;
+  if(audio.getAttribute('src') !== url){ audio.src = url; }
+  audio.play().catch(function(){});
+  el('miniPlayer').classList.add('open');
+}
+function closePlayer(){
+  var audio = el('mpAudio');
+  if(audio){ audio.pause(); audio.removeAttribute('src'); audio.load(); }
+  var mp = el('miniPlayer');
+  if(mp) mp.classList.remove('open');
+}
+function listenToEpisode(){
+  var box = el('epBox');
+  if(box) box.scrollIntoView({ behavior:'smooth', block:'start' });
+}
 function fillEpisodeBox(title){
   var box = el('epBox');
   if(!box) return;
@@ -1445,9 +1491,10 @@ function fillEpisodeBox(title){
     }
     var html = '';
     eps.slice(0,3).forEach(function(ep){
+      var playIdx = ep.url ? ref({ type:'playep', title:ep.t, url:ep.url }) : null;
       html += '<div style="margin-bottom:10px"><div style="font-size:13.5px;font-weight:500;color:var(--txt)">' + esc(ep.t) + '</div>'
         + '<div style="font-size:11.5px;margin:2px 0 6px">' + esc(ep.date) + '</div>'
-        + (ep.url ? '<audio controls preload="none" style="width:100%" src="' + esc(ep.url) + '"></audio>' : spotifySearchLink(title))
+        + (ep.url ? '<button class="btn btn-outline btn-sm" data-action="playep" data-ref="' + playIdx + '">▶ Play episode</button>' : spotifySearchLink(title))
         + (ep.desc ? '<details style="margin-top:6px"><summary style="cursor:pointer;font-size:12px">Episode notes</summary><p style="font-size:12.5px;margin-top:6px">' + esc(ep.desc.slice(0,700)) + '</p></details>' : '')
         + '</div>';
     });
@@ -2224,6 +2271,9 @@ document.addEventListener('click', function(ev){
   else if(action==='closeage') closeAgeInfo();
   else if(action==='viewphoto'){ if(r) openLightbox(r.url); }
   else if(action==='closelightbox') closeLightbox();
+  else if(action==='playep'){ if(r) playEpisode(r.title, r.url); }
+  else if(action==='closeplayer') closePlayer();
+  else if(action==='listenep') listenToEpisode();
   else if(action==='mic') toggleDictation(t.getAttribute('data-target'), t);
   else if(action==='rate'){
     if(r && r.type==='ratemovie'){ var y=(r.movie.release_date||'').slice(0,4); openRatingForm({ title:r.movie.title, year:y?Number(y):null, movie:r.movie }); }
