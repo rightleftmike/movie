@@ -139,6 +139,8 @@ label{font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:.0
 .refine-cell.sel{border-color:var(--gold)}
 .refine-cell h4{font-size:11px;color:var(--dim);text-transform:uppercase;margin-bottom:4px}
 .suggestion{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;margin-top:10px}
+.sugbadge{margin:6px 0}
+.sugbadge .quickrate{align-items:flex-start}
 .suggestion .st{font-family:'Bebas Neue';font-size:21px;color:var(--gold)}
 .tonight-card{background:linear-gradient(145deg,#1b1710,#14120e);border:1px solid var(--gold);border-radius:14px;padding:18px;margin-top:14px}
 .seg{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}
@@ -828,6 +830,25 @@ function renderRatings(){
   el('rGrid').innerHTML = html || '<p class="muted">No ratings match.</p>';
 }
 
+// Shared star-badge markup used anywhere a film title needs a rate/quick-rate control: Show List
+// rows and Suggest cards both render the exact same thing. Rated -> the star readout, clickable
+// to reopen the full review. Unrated -> 5 tappable quick-rate stars plus a "Write full review"
+// link, same as Show List.
+function ratingBadgeHTML(title, year){
+  var mine = myFind(title, year);
+  var ridx = ref({ type:'ratefilm', title:title, year:year });
+  if(mine){
+    return '<span class="badge mine" style="cursor:pointer" data-action="rate" data-ref="' + ridx + '" title="View / edit review">' + starsFor(mine.rating) + '</span>';
+  }
+  var qidx = ref({ type:'quickrate', title:title, year:year });
+  return '<div class="quickrate">'
+    + '<div class="qstars" data-action="quickrate" data-ref="' + qidx + '" title="Quick-rate">'
+    + '<span class="qstar" data-n="5" title="All-timer">★</span><span class="qstar" data-n="4" title="Loved">★</span><span class="qstar" data-n="3" title="Liked">★</span><span class="qstar" data-n="2" title="Meh">★</span><span class="qstar" data-n="1" title="Disliked">★</span>'
+    + '</div>'
+    + '<span class="qr-full" data-action="rate" data-ref="' + ridx + '">Write full review</span>'
+    + '</div>';
+}
+
 /* ================= RENDER: SHOW LIST ================= */
 function renderShow(){
   var q = norm(el('showQ').value), unonly = el('showUnrated').checked;
@@ -843,24 +864,7 @@ function renderShow(){
     if(q && norm(f.title).indexOf(q)<0 && norm(f.director).indexOf(q)<0) continue;
     shown++;
     var idx = ref({ type:'movie', title:f.title, year:f.year });
-    var ridx = ref({ type:'ratefilm', title:f.title, year:f.year });
-    var badge;
-    if(mine){
-      // Tapping the badge (quick-rated or fully reviewed, no visual difference) reopens the same
-      // full rating form, pre-filled -- one tap to view or edit the review from right here.
-      badge = '<span class="badge mine" style="cursor:pointer" data-action="rate" data-ref="' + ridx + '" title="View / edit review">' + starsFor(mine.rating) + '</span>';
-    } else {
-      // Quick-rate: tap a star to log a rating with zero typing (helps the AI recommendations
-      // right away), while still surfacing the full review as the richer, still-easy option --
-      // that's where standout performance/notes/follows live, which sharpen future suggestions.
-      var qidx = ref({ type:'quickrate', title:f.title, year:f.year });
-      badge = '<div class="quickrate">'
-        + '<div class="qstars" data-action="quickrate" data-ref="' + qidx + '" title="Quick-rate">'
-        + '<span class="qstar" data-n="5" title="All-timer">★</span><span class="qstar" data-n="4" title="Loved">★</span><span class="qstar" data-n="3" title="Liked">★</span><span class="qstar" data-n="2" title="Meh">★</span><span class="qstar" data-n="1" title="Disliked">★</span>'
-        + '</div>'
-        + '<span class="qr-full" data-action="rate" data-ref="' + ridx + '">Write full review</span>'
-        + '</div>';
-    }
+    var badge = ratingBadgeHTML(f.title, f.year);
     html += '<div class="rowitem"><div class="grow" data-action="movie" data-ref="' + idx + '">'
       + '<div class="t">' + esc(f.title) + ' <span class="muted">(' + esc(f.year) + ')</span></div>'
       + '<div class="s">' + esc(f.director) + (f.genres ? ' · ' + esc(f.genres) : '') + '</div></div>'
@@ -1371,7 +1375,7 @@ function saveRating(){
   var optimistic = FORM.existing ? Object.assign({}, FORM.existing, d) : Object.assign({ id:'tmp' }, d);
   if(FORM.existing){ MY = MY.map(function(r){ return r.id===FORM.existing.id ? optimistic : r; }); }
   else MY.unshift(optimistic);
-  stopDictation(); closeModal(); refreshCounts(); renderRatings(); renderShow();
+  stopDictation(); closeModal(); refreshCounts(); renderRatings(); renderShow(); refreshSuggestBadges();
   toast('Saved: ' + d.title, 'ok');
   req.then(function(res){
     if(res.error) throw new Error(res.error.message);
@@ -1392,7 +1396,7 @@ function deleteRating(){
   if(!confirm('Delete your review of "' + FORM.title + '"? This removes the rating and all notes -- it goes back to unrated.')) return;
   var row = FORM.existing;
   MY = MY.filter(function(r){ return r.id !== row.id; });
-  stopDictation(); closeModal(); refreshCounts(); renderRatings(); renderShow();
+  stopDictation(); closeModal(); refreshCounts(); renderRatings(); renderShow(); refreshSuggestBadges();
   toast('Deleted: ' + row.title, 'ok');
   SUPA.from('ratings').delete().eq('id', row.id).then(function(res){
     if(res.error) throw new Error(res.error.message);
@@ -1418,13 +1422,13 @@ function quickRate(title, year, n){
   var optimistic = existing ? Object.assign({}, existing, d) : Object.assign({ id:'tmp'+Math.random() }, d);
   if(existing){ MY = MY.map(function(r){ return r.id===existing.id ? optimistic : r; }); }
   else MY.unshift(optimistic);
-  refreshCounts(); renderShow(); renderRatings();
+  refreshCounts(); renderShow(); renderRatings(); refreshSuggestBadges();
   toast('Quick-rated: ' + title + ' — ' + label, 'ok');
   req.then(function(res){
     if(res.error) throw new Error(res.error.message);
     var rows = res.data;
     if(rows && rows[0]){ var real = rows[0]; MY = MY.map(function(r){ return (r.id===optimistic.id || r.id===real.id) ? real : r; }); }
-    renderShow(); renderRatings();
+    renderShow(); renderRatings(); refreshSuggestBadges();
   }).catch(function(e){
     toast('⚠️ Quick rate failed, reloading: ' + e.message, 'err');
     loadCloud();
@@ -1596,6 +1600,15 @@ function suggestFilterText(){
   else if(length==='long') parts.push('runtime over ~120 minutes');
   return parts.length ? ('\n\nAdditional constraints -- every single suggestion MUST match ALL of these: ' + parts.join('; ') + '.') : '';
 }
+// Titles currently shown in the Suggest tab, so a quick-rate/save/delete elsewhere can repaint
+// just their badges (star display) in place without re-running the AI call.
+var LAST_SUGGESTIONS = [];
+function refreshSuggestBadges(){
+  LAST_SUGGESTIONS.forEach(function(s, i){
+    var wrap = el('sugbadge-' + i);
+    if(wrap) wrap.innerHTML = ratingBadgeHTML(s.title, s.year);
+  });
+}
 function runSuggest(){
   var out = el('sugOut');
   out.innerHTML = '<p class="muted" style="margin-top:14px"><span class="spin"></span> Building taste profile & asking the AI…</p>';
@@ -1648,10 +1661,13 @@ function runSuggest(){
       if(!arr.length) throw new Error('AI couldn’t find matches in that decade — try again or loosen the filters');
     }
     var html = '';
-    arr.forEach(function(s){
+    LAST_SUGGESTIONS = [];
+    arr.forEach(function(s, i){
+      LAST_SUGGESTIONS[i] = { title:s.title, year:s.year };
       var midx = ref({ type:'movie', title:s.title, year:s.year });
       var widx = ref({ type:'wladd', title:s.title, year:s.year||null, source:'claude suggestion' });
       html += '<div class="suggestion"><div class="st">' + esc(s.title) + ' <span class="muted" style="font-size:14px;font-family:DM Sans">(' + esc(s.year||'?') + ')</span></div>'
+        + '<div class="sugbadge" id="sugbadge-' + i + '">' + ratingBadgeHTML(s.title, s.year) + '</div>'
         + '<p style="font-size:13.5px;margin:6px 0">' + esc(s.reason||'') + '</p>'
         + '<div style="display:flex;gap:8px"><button class="btn btn-outline btn-sm" data-action="movie" data-ref="' + midx + '">View</button>'
         + '<button class="btn btn-outline btn-sm" data-action="wladd" data-ref="' + widx + '">+ Watchlist</button></div></div>';
@@ -1690,8 +1706,10 @@ function watchTonight(){
 }
 function renderTonight(pick){
   var midx = ref({ type:'movie', title:pick.title, year:pick.year });
+  LAST_SUGGESTIONS = [{ title:pick.title, year:pick.year }];
   el('sugOut').innerHTML = '<div class="tonight-card"><div class="muted" style="letter-spacing:.2em;text-transform:uppercase;font-size:11px">Tonight’s pick</div>'
     + '<h2 style="font-size:34px;margin:4px 0">' + esc(pick.title) + ' <span class="muted" style="font-size:16px;font-family:DM Sans">(' + esc(pick.year||'?') + ')</span></h2>'
+    + '<div class="sugbadge" id="sugbadge-0">' + ratingBadgeHTML(pick.title, pick.year) + '</div>'
     + '<p style="font-size:14.5px">' + esc(pick.reason||'') + '</p>'
     + (pick.runtime_note ? '<p class="muted" style="font-size:12.5px;margin-top:4px">⏱ ' + esc(pick.runtime_note) + '</p>' : '')
     + '<div style="margin-top:12px"><button class="btn btn-gold" data-action="movie" data-ref="' + midx + '">View film</button></div></div>';
