@@ -1504,7 +1504,15 @@ function saveRating(){
   req.then(function(res){
     if(res.error) throw new Error(res.error.message);
     var rows = res.data;
-    if(rows && rows[0]){ var real = rows[0]; MY = MY.map(function(r){ return (r.id==='tmp'||r.id===real.id) ? real : r; }); }
+    if(rows && rows[0]){
+      var real = rows[0];
+      // Same race as the watchlist toggle: if the row got deleted again before this insert
+      // round-tripped, its optimistic tmp id is already gone from MY -- reconciling it back in
+      // would resurrect a rating the user just deleted, so clean up the now-orphaned real row
+      // server-side instead.
+      if(MY.some(function(r){ return r.id==='tmp'; })){ MY = MY.map(function(r){ return r.id==='tmp' ? real : r; }); }
+      else if(!FORM.existing){ SUPA.from('ratings').delete().eq('id', real.id).catch(function(){}); }
+    }
     renderRatings();
   }).catch(function(e){
     toast('⚠️ Save failed, reloading: ' + e.message, 'err');
@@ -1522,6 +1530,7 @@ function deleteRating(){
   MY = MY.filter(function(r){ return r.id !== row.id; });
   stopDictation(); closeModal(); refreshCounts(); renderRatings(); renderShow(); refreshSuggestBadges();
   toast('Deleted: ' + row.title, 'ok');
+  if(isTmpId(row.id)) return;
   SUPA.from('ratings').delete().eq('id', row.id).then(function(res){
     if(res.error) throw new Error(res.error.message);
   }).catch(function(e){
@@ -1551,7 +1560,14 @@ function quickRate(title, year, n){
   req.then(function(res){
     if(res.error) throw new Error(res.error.message);
     var rows = res.data;
-    if(rows && rows[0]){ var real = rows[0]; MY = MY.map(function(r){ return (r.id===optimistic.id || r.id===real.id) ? real : r; }); }
+    if(rows && rows[0]){
+      var real = rows[0];
+      if(MY.some(function(r){ return r.id===optimistic.id; })){
+        MY = MY.map(function(r){ return r.id===optimistic.id ? real : r; });
+      } else if(!existing){
+        SUPA.from('ratings').delete().eq('id', real.id).catch(function(){});
+      }
+    }
     renderShow(); renderRatings(); refreshSuggestBadges();
   }).catch(function(e){
     toast('⚠️ Quick rate failed, reloading: ' + e.message, 'err');
@@ -1666,17 +1682,37 @@ function toggleDictation(targetId, btn){
 }
 
 /* ================= FOLLOW / WATCHLIST OPS ================= */
+// 'tmp...' ids mark a row whose insert hasn't round-tripped to Supabase yet -- there's no such
+// row in the DB to delete. If the user un-toggles before that insert resolves, we can't hit
+// Supabase with the placeholder id (that's what threw "invalid input syntax for type uuid"
+// below); we just drop it from local state instantly, and the insert's own .then() checks
+// whether it's still present once the real row comes back, deleting it server-side if not.
+function isTmpId(id){ return typeof id === 'string' && id.indexOf('tmp') === 0; }
 function followPerson(name, from){
   if(PEOPLE.some(function(p){ return p.name.toLowerCase()===name.toLowerCase(); })) return;
   var optimistic = { id:'tmp'+Math.random(), name:name, added_from:from||null, created_at:new Date().toISOString() };
   PEOPLE.unshift(optimistic); refreshCounts(); renderPeople(); refreshPersonDrawer(); refreshMovieCard();
   SUPA.from('followed_people').insert({ name:name, added_from:from||null }).select()
-    .then(function(res){ if(res.error) throw new Error(res.error.message); var rows=res.data; if(rows&&rows[0]){ PEOPLE = PEOPLE.map(function(p){ return p.id===optimistic.id ? rows[0] : p; }); renderPeople(); } toast('Following ' + name, 'ok'); })
+    .then(function(res){
+      if(res.error) throw new Error(res.error.message);
+      var rows=res.data;
+      if(rows && rows[0]){
+        var real = rows[0];
+        if(PEOPLE.some(function(p){ return p.id===optimistic.id; })){
+          PEOPLE = PEOPLE.map(function(p){ return p.id===optimistic.id ? real : p; });
+          renderPeople(); refreshPersonDrawer(); refreshMovieCard();
+        } else {
+          SUPA.from('followed_people').delete().eq('id', real.id).catch(function(){});
+        }
+      }
+      toast('Following ' + name, 'ok');
+    })
     .catch(function(e){ toast('⚠️ Follow failed: ' + e.message, 'err'); loadCloud(); });
 }
 function unfollowPerson(row){
   PEOPLE = PEOPLE.filter(function(p){ return p.id!==row.id; });
   refreshCounts(); renderPeople(); refreshPersonDrawer(); refreshMovieCard();
+  if(isTmpId(row.id)) return;
   SUPA.from('followed_people').delete().eq('id', row.id)
     .then(function(res){ if(res.error) throw new Error(res.error.message); toast('Unfollowed ' + row.name, 'ok'); })
     .catch(function(e){ toast('⚠️ ' + e.message, 'err'); loadCloud(); });
@@ -1687,7 +1723,20 @@ function addWatchlist(title, year, source){
   var optimistic = { id:'tmp'+Math.random(), title:title, year:year, source:source||null, added_at:new Date().toISOString() };
   WL.unshift(optimistic); refreshCounts(); renderWatchlist(); refreshMovieCard(); refreshPersonDrawer(); refreshSuggestBadges();
   SUPA.from('watchlist').insert({ title:title, year:year, source:source||null }).select()
-    .then(function(res){ if(res.error) throw new Error(res.error.message); var rows=res.data; if(rows&&rows[0]){ WL = WL.map(function(w){ return w.id===optimistic.id ? rows[0] : w; }); renderWatchlist(); } toast('Added to watchlist: ' + title, 'ok'); })
+    .then(function(res){
+      if(res.error) throw new Error(res.error.message);
+      var rows=res.data;
+      if(rows && rows[0]){
+        var real = rows[0];
+        if(WL.some(function(w){ return w.id===optimistic.id; })){
+          WL = WL.map(function(w){ return w.id===optimistic.id ? real : w; });
+          renderWatchlist(); refreshMovieCard(); refreshPersonDrawer(); refreshSuggestBadges();
+        } else {
+          SUPA.from('watchlist').delete().eq('id', real.id).catch(function(){});
+        }
+      }
+      toast('Added to watchlist: ' + title, 'ok');
+    })
     .catch(function(e){ toast('⚠️ ' + e.message, 'err'); loadCloud(); });
 }
 // Universal watchlist toggle: same treatment everywhere a film can be added/removed from the
@@ -1709,6 +1758,7 @@ function watchlistToggleHTML(title, year, source, small){
 function removeWatchlist(row, silent){
   WL = WL.filter(function(w){ return w.id!==row.id; });
   refreshCounts(); renderWatchlist(); refreshMovieCard(); refreshPersonDrawer(); refreshSuggestBadges();
+  if(isTmpId(row.id)){ if(!silent) toast('Removed from watchlist', 'ok'); return; }
   SUPA.from('watchlist').delete().eq('id', row.id)
     .then(function(res){ if(res.error) throw new Error(res.error.message); if(!silent) toast('Removed from watchlist', 'ok'); })
     .catch(function(e){ toast('⚠️ ' + e.message, 'err'); loadCloud(); });
