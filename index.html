@@ -1166,7 +1166,10 @@ function movieCardHTML(m){
 
   var badges = '';
   if(onRW) badges += '<span class="badge rw">🎙 On The Rewatchables' + (onRWAll.length>1 ? ' · ' + onRWAll.length + ' episodes' : '') + '</span>';
-  if(mine) badges += '<span class="badge mine">' + starsFor(mine.rating) + '</span>';
+  if(mine){
+    var mineIdx = ref({ type:'ratemovie', movie:m });
+    badges += '<span class="badge mine" style="cursor:pointer" data-action="rate" data-ref="' + mineIdx + '" title="View / edit review">' + starsFor(mine.rating) + '</span>';
+  }
 
   var facts = [];
   if(m.runtime) facts.push('<span>⏱ <b>' + m.runtime + ' min</b></span>');
