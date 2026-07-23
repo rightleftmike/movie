@@ -1257,33 +1257,50 @@ function showAgeInfo(id, name, movieYear, character, movieTitle, movieId){
   el('ageVeil').classList.add('open');
   tmdbPerson(id).then(function(p){
     var ageLine = '';
-    if(p.birthday && movieYear){
-      var by = parseInt(p.birthday.slice(0,4), 10);
-      if(by) ageLine = '<p class="muted" style="margin-top:2px">Roughly age ' + (movieYear - by) + ' around ' + esc(movieYear) + '</p>';
-    }
+    var birthYear = p.birthday ? (parseInt(p.birthday.slice(0,4), 10) || null) : null;
+    if(birthYear && movieYear) ageLine = '<p class="muted" style="margin-top:2px">Roughly age ' + (movieYear - birthYear) + ' around ' + esc(movieYear) + '</p>';
     var charSection = (character && movieTitle)
       ? '<hr class="gold" style="margin:12px 0"><div id="ageCharPhotos"><p class="muted" style="margin-top:4px"><span class="spin"></span> Searching for stills as ' + esc(character) + '…</p></div>'
       : '';
     el('ageModal').innerHTML = '<button class="modal-x" data-action="closeage" title="Close">✕</button>'
       + '<h3 style="margin-top:0">' + esc(name) + '</h3>' + ageLine
-      + '<div id="agePhotos"><p class="muted" style="margin-top:8px"><span class="spin"></span> Finding photos from around ' + esc(movieYear||'') + '…</p></div>'
+      + '<div id="agePhotos"><p class="muted" style="margin-top:8px"><span class="spin"></span> Finding photos across their career…</p></div>'
       + charSection;
-    loadAgePhotos(id, name, movieYear);
+    loadAgePhotos(id, name, movieYear, birthYear);
     if(character && movieTitle) loadCharacterPhotos(id, name, character, movieId, movieTitle);
   }).catch(function(){
     el('ageModal').innerHTML = '<button class="modal-x" data-action="closeage" title="Close">✕</button><h3 style="margin-top:0">' + esc(name) + '</h3><p style="color:var(--red)">⚠️ Could not load info</p>';
   });
 }
-// Checks the exact release year plus the year on either side -- a single year's category is
-// often thin or missing even for well-documented figures, so pooling three adjacent years both
-// raises the odds of finding anything and pulls in photos from different events/appearances
-// instead of just whatever handful happen to be tagged to one exact year.
-function loadAgePhotos(id, name, movieYear){
-  if(!movieYear){ renderAgePhotos(id, [], false, movieYear); return; }
-  var years = [movieYear, movieYear - 1, movieYear + 1];
-  Promise.all(years.map(function(y){ return fetchCommonsYearPhotos(name, y); })).then(function(results){
+// A single year's Commons category is often thin or missing even for well-documented figures --
+// that was causing most cast members to fall straight through to "no dated photos, showing recent
+// photos", which for anyone whose career spans decades meant a wall of current-day headshots with
+// zero relevance to the film. Instead of chasing one exact year, spread the search across several
+// points in the actor's career (the movie's release year plus roughly one probe per 8ish years
+// from when they'd have been ~20 to today) and cap how many photos any single year can contribute,
+// so the result is a handful of genuinely good, dated photos spanning their look over time rather
+// than a pile of near-duplicates from whichever one year happened to have the most coverage.
+function careerYearCandidates(movieYear, birthYear){
+  var now = new Date().getFullYear();
+  var years = [];
+  if(movieYear){ years.push(movieYear - 1, movieYear, movieYear + 1); }
+  var start = birthYear ? birthYear + 20 : (movieYear ? movieYear - 20 : now - 40);
+  for(var y = Math.round(start); y <= now; y += 8) years.push(y);
+  years.push(now);
+  var seen = {}, out = [];
+  years.forEach(function(y){ y = Math.round(y); if(y && y <= now && !seen[y]){ seen[y] = 1; out.push(y); } });
+  return out.slice(0, 9);
+}
+function loadAgePhotos(id, name, movieYear, birthYear){
+  var years = careerYearCandidates(movieYear, birthYear);
+  Promise.all(years.map(function(y){
+    return fetchCommonsYearPhotos(name, y).then(function(photos){
+      return photos.slice(0, 2).map(function(ph){ ph.year = y; return ph; });
+    });
+  })).then(function(results){
     var seen = {}, photos = [];
-    results.forEach(function(arr){ arr.forEach(function(p){ if(!seen[p.full]){ seen[p.full]=1; photos.push(p); } }); });
+    results.forEach(function(arr){ arr.forEach(function(p){ if(!seen[p.full]){ seen[p.full] = 1; photos.push(p); } }); });
+    photos.sort(function(a, b){ return a.year - b.year; });
     if(photos.length){ renderAgePhotos(id, photos.slice(0,12), true, movieYear); }
     else { renderAgePhotos(id, [], false, movieYear); }
   });
@@ -1305,14 +1322,16 @@ function fetchCommonsYearPhotos(name, year){
 }
 function renderAgePhotos(id, eraPhotos, isEra, movieYear){
   if(isEra && eraPhotos.length){
-    paintAgePhotos(eraPhotos, 'Photos from around ' + esc(movieYear) + ' (Wikimedia Commons)');
+    var years = eraPhotos.map(function(p){ return p.year; }).filter(Boolean);
+    var range = years.length ? (Math.min.apply(null, years) + '–' + Math.max.apply(null, years)) : '';
+    paintAgePhotos(eraPhotos, 'Photos across their career' + (range ? ' (' + range + ')' : '') + ' — Wikimedia Commons');
     return;
   }
-  // No dated photos for this person -- fall back to their regular TMDB gallery, labeled honestly
-  // as not tied to this specific year rather than implying they are.
+  // No dated photos found in any of the probed years -- fall back to their regular TMDB gallery,
+  // labeled honestly as not tied to any particular year rather than implying they are.
   tmdb('person/' + id + '/images').then(function(res){
     var photos = (res.profiles||[]).slice(0,12).map(function(p){ return { thumb: IMG+'w300'+p.file_path, full: IMG+'w780'+p.file_path }; });
-    paintAgePhotos(photos, photos.length ? 'No dated photos found for ' + esc(movieYear) + ' — showing recent photos' : 'No photos found');
+    paintAgePhotos(photos, photos.length ? 'No dated photos found — showing recent photos' : 'No photos found');
   }).catch(function(){ paintAgePhotos([], 'No photos found'); });
 }
 function paintAgePhotos(photos, label){
@@ -1322,7 +1341,8 @@ function paintAgePhotos(photos, label){
   var html = '<div class="muted" style="font-size:11px;margin-top:8px">' + label + '</div><div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">';
   photos.forEach(function(p){
     var pidx = ref({ type:'viewphoto', url:p.full });
-    html += '<img src="' + p.thumb + '" data-action="viewphoto" data-ref="' + pidx + '" title="Click to enlarge" style="width:70px;height:90px;object-fit:cover;border-radius:6px;border:1px solid var(--line);cursor:pointer">';
+    var tt = p.year ? ('Click to enlarge — ' + p.year) : 'Click to enlarge';
+    html += '<img src="' + p.thumb + '" data-action="viewphoto" data-ref="' + pidx + '" title="' + esc(tt) + '" style="width:70px;height:90px;object-fit:cover;border-radius:6px;border:1px solid var(--line);cursor:pointer">';
   });
   box.innerHTML = html + '</div>';
 }
