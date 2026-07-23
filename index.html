@@ -295,6 +295,7 @@ body.preauth header, body.preauth #appWrap{display:none!important}
 <div class="drawer" id="drawer"></div>
 <div class="modal-veil" id="modalVeil"><div class="modal" id="modal"></div></div>
 <div class="modal-veil" id="ageVeil"><div class="modal" id="ageModal" style="max-width:380px"></div></div>
+<div class="modal-veil" id="lbVeil" data-action="closelightbox" style="z-index:90"><img id="lbImg" style="max-width:92vw;max-height:92vh;display:block;margin:40px auto;border-radius:8px"></div>
 <div class="toast-box" id="toasts"></div>
 
 <div id="bootLoading" style="position:fixed;inset:0;background:var(--bg);z-index:210;display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:14px"><span class="spin"></span>&nbsp;&nbsp;Loading your Screening Room…</div>
@@ -1195,43 +1196,60 @@ function showAgeInfo(id, name, movieYear){
     el('ageModal').innerHTML = '<button class="modal-x" data-action="closeage" title="Close">✕</button><h3 style="margin-top:0">' + esc(name) + '</h3><p style="color:var(--red)">⚠️ Could not load info</p>';
   });
 }
+// Checks the exact release year plus the year on either side -- a single year's category is
+// often thin or missing even for well-documented figures, so pooling three adjacent years both
+// raises the odds of finding anything and pulls in photos from different events/appearances
+// instead of just whatever handful happen to be tagged to one exact year.
 function loadAgePhotos(id, name, movieYear){
   if(!movieYear){ renderAgePhotos(id, [], false, movieYear); return; }
-  var cat = 'Category:' + name + ' in ' + movieYear;
-  var wmUrl = 'https://commons.wikimedia.org/w/api.php?action=query&generator=categorymembers&gcmtitle='
-    + encodeURIComponent(cat) + '&gcmtype=file&gcmlimit=6&prop=imageinfo&iiprop=url&format=json&origin=*';
-  fetch(wmUrl).then(function(r){ return r.json(); }).then(function(data){
-    var pages = (data.query && data.query.pages) || {};
-    var imgs = [];
-    Object.keys(pages).forEach(function(k){
-      var ii = pages[k].imageinfo;
-      var url = ii && ii[0] && ii[0].url;
-      if(url && /\.(jpg|jpeg|png)$/i.test(url)) imgs.push(url);
-    });
-    if(imgs.length){ renderAgePhotos(id, imgs.slice(0,5), true, movieYear); }
+  var years = [movieYear, movieYear - 1, movieYear + 1];
+  Promise.all(years.map(function(y){ return fetchCommonsYearPhotos(name, y); })).then(function(results){
+    var seen = {}, photos = [];
+    results.forEach(function(arr){ arr.forEach(function(p){ if(!seen[p.full]){ seen[p.full]=1; photos.push(p); } }); });
+    if(photos.length){ renderAgePhotos(id, photos.slice(0,12), true, movieYear); }
     else { renderAgePhotos(id, [], false, movieYear); }
-  }).catch(function(){ renderAgePhotos(id, [], false, movieYear); });
+  });
 }
-function renderAgePhotos(id, eraUrls, isEra, movieYear){
-  if(isEra && eraUrls.length){
-    paintAgePhotos(eraUrls, 'Photos from around ' + esc(movieYear) + ' (Wikimedia Commons)');
+function fetchCommonsYearPhotos(name, year){
+  var cat = 'Category:' + name + ' in ' + year;
+  var wmUrl = 'https://commons.wikimedia.org/w/api.php?action=query&generator=categorymembers&gcmtitle='
+    + encodeURIComponent(cat) + '&gcmtype=file&gcmlimit=10&prop=imageinfo&iiprop=url|thumburl&iiurlwidth=300&format=json&origin=*';
+  return fetch(wmUrl).then(function(r){ return r.json(); }).then(function(data){
+    var pages = (data.query && data.query.pages) || {};
+    var out = [];
+    Object.keys(pages).forEach(function(k){
+      var ii = pages[k].imageinfo && pages[k].imageinfo[0];
+      var full = ii && ii.url;
+      if(full && /\.(jpg|jpeg|png)$/i.test(full)) out.push({ thumb: ii.thumburl || full, full: full });
+    });
+    return out;
+  }).catch(function(){ return []; });
+}
+function renderAgePhotos(id, eraPhotos, isEra, movieYear){
+  if(isEra && eraPhotos.length){
+    paintAgePhotos(eraPhotos, 'Photos from around ' + esc(movieYear) + ' (Wikimedia Commons)');
     return;
   }
   // No dated photos for this person -- fall back to their regular TMDB gallery, labeled honestly
   // as not tied to this specific year rather than implying they are.
   tmdb('person/' + id + '/images').then(function(res){
-    var urls = ((res.profiles||[]).slice(0,5)).map(function(p){ return IMG + 'w300' + p.file_path; });
-    paintAgePhotos(urls, urls.length ? 'No dated photos found for ' + esc(movieYear) + ' — showing recent photos' : 'No photos found');
+    var photos = (res.profiles||[]).slice(0,12).map(function(p){ return { thumb: IMG+'w300'+p.file_path, full: IMG+'w780'+p.file_path }; });
+    paintAgePhotos(photos, photos.length ? 'No dated photos found for ' + esc(movieYear) + ' — showing recent photos' : 'No photos found');
   }).catch(function(){ paintAgePhotos([], 'No photos found'); });
 }
-function paintAgePhotos(urls, label){
+function paintAgePhotos(photos, label){
   var box = el('agePhotos');
   if(!box) return;
-  if(!urls.length){ box.innerHTML = '<p class="muted" style="margin-top:8px">' + label + '</p>'; return; }
+  if(!photos.length){ box.innerHTML = '<p class="muted" style="margin-top:8px">' + label + '</p>'; return; }
   var html = '<div class="muted" style="font-size:11px;margin-top:8px">' + label + '</div><div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">';
-  urls.forEach(function(u){ html += '<img src="' + u + '" style="width:70px;height:90px;object-fit:cover;border-radius:6px;border:1px solid var(--line)">'; });
+  photos.forEach(function(p){
+    var pidx = ref({ type:'viewphoto', url:p.full });
+    html += '<img src="' + p.thumb + '" data-action="viewphoto" data-ref="' + pidx + '" title="Click to enlarge" style="width:70px;height:90px;object-fit:cover;border-radius:6px;border:1px solid var(--line);cursor:pointer">';
+  });
   box.innerHTML = html + '</div>';
 }
+function openLightbox(url){ el('lbImg').src = url; el('lbVeil').classList.add('open'); }
+function closeLightbox(){ el('lbVeil').classList.remove('open'); el('lbImg').src = ''; }
 
 /* ================= PODCAST FEED ================= */
 var FEED = null, FEED_P = null;
@@ -2063,6 +2081,8 @@ document.addEventListener('click', function(ev){
   else if(action==='closemodal') attemptCloseModal();
   else if(action==='ageinfo'){ if(r) showAgeInfo(r.id, r.name, r.movieYear); }
   else if(action==='closeage') closeAgeInfo();
+  else if(action==='viewphoto'){ if(r) openLightbox(r.url); }
+  else if(action==='closelightbox') closeLightbox();
   else if(action==='mic') toggleDictation(t.getAttribute('data-target'), t);
   else if(action==='rate'){
     if(r && r.type==='ratemovie'){ var y=(r.movie.release_date||'').slice(0,4); openRatingForm({ title:r.movie.title, year:y?Number(y):null, movie:r.movie }); }
