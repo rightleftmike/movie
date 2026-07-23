@@ -350,6 +350,12 @@ var FORM = null;        // active rating form context
 var SUG_MODE = 'general';
 var sheetLive = false;
 var movieCache = {}, personCache = {};
+// Whichever movie card / person drawer is currently on screen, so a watchlist toggle click can
+// repaint just that view in place (fresh badge/button state) without a network refetch.
+var CURRENT_CARD_MOVIE = null;
+var CURRENT_DRAWER_PERSON = null;
+function refreshMovieCard(){ if(CURRENT_CARD_MOVIE) el('cardBox').innerHTML = movieCardHTML(CURRENT_CARD_MOVIE); }
+function refreshPersonDrawer(){ if(CURRENT_DRAWER_PERSON) el('drawer').innerHTML = personDrawerHTML(CURRENT_DRAWER_PERSON); }
 
 /* ================= BROWSER BACK/FORWARD NAVIGATION =================
    Plain tab switches and opening a movie card both push a history entry, so the browser's
@@ -1043,6 +1049,7 @@ function openMovieCard(tmdbId, skipNav){
   el('cardBox').innerHTML = '<div class="card"><span class="spin"></span> Loading…</div>';
   showTab('search');
   return tmdbMovie(tmdbId).then(function(m){
+    CURRENT_CARD_MOVIE = m;
     el('cardBox').innerHTML = movieCardHTML(m);
     el('searchResults').innerHTML = '';
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -1070,7 +1077,6 @@ function movieCardHTML(m){
   var mine = myFind(m.title, year);
   var onRWAll = rwFindAll(m.title, year);
   var onRW = onRWAll[0] || null;
-  var onWL = wlFind(m.title, year);
   var directors = crewOf(m, ['Director']);
   var writers = crewOf(m, ['Screenplay','Writer','Story']).slice(0,4);
   var dps = crewOf(m, ['Director of Photography','Cinematography']).slice(0,2);
@@ -1081,7 +1087,6 @@ function movieCardHTML(m){
   var badges = '';
   if(onRW) badges += '<span class="badge rw">🎙 On The Rewatchables' + (onRWAll.length>1 ? ' · ' + onRWAll.length + ' episodes' : '') + '</span>';
   if(mine) badges += '<span class="badge mine">' + starsFor(mine.rating) + '</span>';
-  if(onWL) badges += '<span class="badge">📋 On watchlist</span>';
 
   var facts = [];
   if(m.runtime) facts.push('<span>⏱ <b>' + m.runtime + ' min</b></span>');
@@ -1103,10 +1108,9 @@ function movieCardHTML(m){
   }
 
   var ridx = ref({ type:'ratemovie', movie:m });
-  var widx = ref({ type:'wladd', title:m.title, year:year?Number(year):null, source:'movie card' });
   var buttons = '<div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">';
   buttons += '<button class="btn btn-gold" data-action="rate" data-ref="' + ridx + '">' + (mine ? '✎ Edit My Rating' : '+ Add My Rating') + '</button>';
-  if(!mine && !onWL) buttons += '<button class="btn btn-outline" data-action="wladd" data-ref="' + widx + '">+ Watchlist</button>';
+  if(!mine) buttons += watchlistToggleHTML(m.title, year, 'movie card');
   buttons += '</div>';
 
   var poster = m.poster_path ? '<img class="poster" src="' + IMG + 'w342' + m.poster_path + '">' : '';
@@ -1285,7 +1289,7 @@ function openPersonById(id, name){
   var dr = el('drawer');
   dr.innerHTML = '<button class="dr-x" data-action="closedrawer">✕ Close</button><p style="margin-top:30px"><span class="spin"></span> Loading ' + esc(name||'') + '…</p>';
   el('drVeil').classList.add('open'); dr.classList.add('open');
-  tmdbPerson(id).then(function(p){ dr.innerHTML = personDrawerHTML(p); })
+  tmdbPerson(id).then(function(p){ CURRENT_DRAWER_PERSON = p; dr.innerHTML = personDrawerHTML(p); })
   .catch(function(e){ dr.innerHTML = '<button class="dr-x" data-action="closedrawer">✕ Close</button><p style="color:var(--red);margin-top:30px">⚠️ ' + esc(e.message) + '</p>'; });
 }
 function openPersonByName(name){
@@ -1295,7 +1299,7 @@ function openPersonByName(name){
     openPersonById(hit.id, name);
   }).catch(function(e){ toast(e.message, 'err'); });
 }
-function closeDrawer(){ el('drawer').classList.remove('open'); el('drVeil').classList.remove('open'); }
+function closeDrawer(){ el('drawer').classList.remove('open'); el('drVeil').classList.remove('open'); CURRENT_DRAWER_PERSON = null; }
 function filmRow(mv, sub){
   var y = (mv.release_date||'').slice(0,4);
   var midx = ref({ type:'movieById', id: mv.id });
@@ -1308,8 +1312,7 @@ function filmRow(mv, sub){
     var ridx = ref({ type:'ratefilm', title:mv.title, year:y?Number(y):null });
     right = '<span class="badge mine" style="cursor:pointer" data-action="rate" data-ref="' + ridx + '" title="View / edit review">' + starsFor(mine.rating) + '</span>';
   } else {
-    var widx = ref({ type:'wladd', title:mv.title, year:y?Number(y):null, source:'person drawer' });
-    right = wlFind(mv.title, y) ? '<span class="badge">📋</span>' : '<button class="btn btn-outline btn-sm" data-action="wladd" data-ref="' + widx + '">+WL</button>';
+    right = watchlistToggleHTML(mv.title, y, 'person drawer', true);
   }
   return '<div class="rowitem"><div class="grow" data-action="movie" data-ref="' + midx + '">'
     + '<div class="t">' + esc(mv.title) + ' <span class="muted">(' + esc(y||'?') + ')</span></div>'
@@ -1666,14 +1669,30 @@ function addWatchlist(title, year, source){
   if(wlFind(title, year)){ toast('Already on watchlist', 'err'); return; }
   if(myFind(title, year)){ toast('Already rated — it’s in your ratings', 'err'); return; }
   var optimistic = { id:'tmp'+Math.random(), title:title, year:year, source:source||null, added_at:new Date().toISOString() };
-  WL.unshift(optimistic); refreshCounts(); renderWatchlist();
+  WL.unshift(optimistic); refreshCounts(); renderWatchlist(); refreshMovieCard(); refreshPersonDrawer(); refreshSuggestBadges();
   SUPA.from('watchlist').insert({ title:title, year:year, source:source||null }).select()
     .then(function(res){ if(res.error) throw new Error(res.error.message); var rows=res.data; if(rows&&rows[0]){ WL = WL.map(function(w){ return w.id===optimistic.id ? rows[0] : w; }); renderWatchlist(); } toast('Added to watchlist: ' + title, 'ok'); })
     .catch(function(e){ toast('⚠️ ' + e.message, 'err'); loadCloud(); });
 }
+// Universal watchlist toggle: same treatment everywhere a film can be added/removed from the
+// watchlist (movie card, person drawer filmography, Suggest cards). On the list -> a filled gold
+// button that removes on click, same "selected" gold convention used for badges/chips elsewhere.
+// Not on the list -> the outline "+ Watchlist" button, unchanged.
+function watchlistToggleHTML(title, year, source, small){
+  var sm = small ? ' btn-sm' : '';
+  var onLabel = small ? '✓ WL' : '✓ Watchlist';
+  var offLabel = small ? '+ WL' : '+ Watchlist';
+  var row = wlFind(title, year);
+  if(row){
+    var didx = ref({ type:'wlremove', row:row });
+    return '<button class="btn btn-gold' + sm + '" data-action="wlremove" data-ref="' + didx + '" title="On watchlist — click to remove">' + onLabel + '</button>';
+  }
+  var widx = ref({ type:'wladd', title:title, year:year?Number(year):null, source:source||null });
+  return '<button class="btn btn-outline' + sm + '" data-action="wladd" data-ref="' + widx + '">' + offLabel + '</button>';
+}
 function removeWatchlist(row, silent){
   WL = WL.filter(function(w){ return w.id!==row.id; });
-  refreshCounts(); renderWatchlist();
+  refreshCounts(); renderWatchlist(); refreshMovieCard(); refreshPersonDrawer(); refreshSuggestBadges();
   SUPA.from('watchlist').delete().eq('id', row.id)
     .then(function(res){ if(res.error) throw new Error(res.error.message); if(!silent) toast('Removed from watchlist', 'ok'); })
     .catch(function(e){ toast('⚠️ ' + e.message, 'err'); loadCloud(); });
@@ -1712,6 +1731,8 @@ function refreshSuggestBadges(){
   LAST_SUGGESTIONS.forEach(function(s, i){
     var wrap = el('sugbadge-' + i);
     if(wrap) wrap.innerHTML = ratingBadgeHTML(s.title, s.year);
+    var wlWrap = el('sugwl-' + i);
+    if(wlWrap) wlWrap.innerHTML = watchlistToggleHTML(s.title, s.year, 'claude suggestion', true);
   });
 }
 function runSuggest(){
@@ -1770,12 +1791,11 @@ function runSuggest(){
     arr.forEach(function(s, i){
       LAST_SUGGESTIONS[i] = { title:s.title, year:s.year };
       var midx = ref({ type:'movie', title:s.title, year:s.year });
-      var widx = ref({ type:'wladd', title:s.title, year:s.year||null, source:'claude suggestion' });
       html += '<div class="suggestion"><div class="st">' + esc(s.title) + ' <span class="muted" style="font-size:14px;font-family:DM Sans">(' + esc(s.year||'?') + ')</span></div>'
         + '<div class="sugbadge" id="sugbadge-' + i + '">' + ratingBadgeHTML(s.title, s.year) + '</div>'
         + '<p style="font-size:13.5px;margin:6px 0">' + esc(s.reason||'') + '</p>'
         + '<div style="display:flex;gap:8px"><button class="btn btn-outline btn-sm" data-action="movie" data-ref="' + midx + '">View</button>'
-        + '<button class="btn btn-outline btn-sm" data-action="wladd" data-ref="' + widx + '">+ Watchlist</button></div></div>';
+        + '<span id="sugwl-' + i + '">' + watchlistToggleHTML(s.title, s.year, 'claude suggestion', true) + '</span></div></div>';
     });
     out.innerHTML = html;
   }).catch(function(e){ out.innerHTML = aiErrorHTML(e); });
