@@ -840,7 +840,9 @@ function renderShow(){
     var ridx = ref({ type:'ratefilm', title:f.title, year:f.year });
     var badge;
     if(mine){
-      badge = '<span class="badge mine">' + starsFor(mine.rating) + '</span>';
+      // Tapping the badge (quick-rated or fully reviewed, no visual difference) reopens the same
+      // full rating form, pre-filled -- one tap to view or edit the review from right here.
+      badge = '<span class="badge mine" style="cursor:pointer" data-action="rate" data-ref="' + ridx + '" title="View / edit review">' + starsFor(mine.rating) + '</span>';
     } else {
       // Quick-rate: tap a star to log a rating with zero typing (helps the AI recommendations
       // right away), while still surfacing the full review as the richer, still-easy option --
@@ -850,7 +852,7 @@ function renderShow(){
         + '<div class="qstars" data-action="quickrate" data-ref="' + qidx + '" title="Quick-rate">'
         + '<span class="qstar" data-n="5" title="All-timer">★</span><span class="qstar" data-n="4" title="Loved">★</span><span class="qstar" data-n="3" title="Liked">★</span><span class="qstar" data-n="2" title="Meh">★</span><span class="qstar" data-n="1" title="Disliked">★</span>'
         + '</div>'
-        + '<span class="qr-full" data-action="rate" data-ref="' + ridx + '">or write a full review</span>'
+        + '<span class="qr-full" data-action="rate" data-ref="' + ridx + '">Write full review</span>'
         + '</div>';
     }
     html += '<div class="rowitem"><div class="grow" data-action="movie" data-ref="' + idx + '">'
