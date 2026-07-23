@@ -81,6 +81,9 @@ label{font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:.0
 .cast-card img{width:64px;height:64px;border-radius:50%;object-fit:cover;border:1px solid var(--line)}
 .cast-card .cn{font-size:11px;margin-top:3px;line-height:1.2}
 .cast-card .cc{font-size:10px;color:var(--dim);line-height:1.2}
+.cast-card .cast-noimg{width:64px;height:64px;border-radius:50%;background:var(--panel2);line-height:64px;font-size:22px;margin:0 auto}
+.followed-ring{box-shadow:0 0 0 2px var(--gold)}
+.chip.chip-followed{border-color:var(--gold);color:var(--gold)}
 .statsbar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
 .stat{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 13px;text-align:center;flex:1;min-width:80px}
 .stat .n{font-family:'Bebas Neue';font-size:24px;color:var(--gold);line-height:1}
@@ -355,7 +358,12 @@ var movieCache = {}, personCache = {};
 var CURRENT_CARD_MOVIE = null;
 var CURRENT_DRAWER_PERSON = null;
 function refreshMovieCard(){ if(CURRENT_CARD_MOVIE) el('cardBox').innerHTML = movieCardHTML(CURRENT_CARD_MOVIE); }
-function refreshPersonDrawer(){ if(CURRENT_DRAWER_PERSON) el('drawer').innerHTML = personDrawerHTML(CURRENT_DRAWER_PERSON); }
+function refreshPersonDrawer(){
+  if(!CURRENT_DRAWER_PERSON) return;
+  var dr = el('drawer'), scrollY = dr.scrollTop;
+  dr.innerHTML = personDrawerHTML(CURRENT_DRAWER_PERSON);
+  dr.scrollTop = scrollY;
+}
 
 /* ================= BROWSER BACK/FORWARD NAVIGATION =================
    Plain tab switches and opening a movie card both push a history entry, so the browser's
@@ -1067,9 +1075,15 @@ function crewOf(m, jobs){
   }
   return out;
 }
+// Whether a cast/crew name is already in Following -- used to gold-ring their avatar / border
+// their chip on the movie card, so a followed person jumps out before you click into anything.
+function isFollowed(name){
+  return PEOPLE.some(function(p){ return p.name.toLowerCase()===name.toLowerCase(); });
+}
 function personChip(p, roleLabel){
   var idx = ref({ type:'personById', id:p.id, name:p.name });
-  return '<span class="chip" data-action="person" data-ref="' + idx + '">' + esc(p.name) + (roleLabel ? ' <span class="muted">· ' + esc(roleLabel) + '</span>' : '') + '</span>';
+  var followed = isFollowed(p.name);
+  return '<span class="chip' + (followed?' chip-followed':'') + '" data-action="person" data-ref="' + idx + '"' + (followed?' title="Following"':'') + '>' + esc(p.name) + (roleLabel ? ' <span class="muted">· ' + esc(roleLabel) + '</span>' : '') + '</span>';
 }
 function money(n){ return n ? '$' + (n>=1e9 ? (n/1e9).toFixed(2)+'B' : Math.round(n/1e6)+'M') : null; }
 function movieCardHTML(m){
@@ -1103,8 +1117,10 @@ function movieCardHTML(m){
   for(var i=0;i<cast.length;i++){
     var c = cast[i];
     var cidx = ref({ type:'personById', id:c.id, name:c.name });
-    var img = c.profile_path ? '<img src="' + IMG + 'w185' + c.profile_path + '">' : '<div style="width:64px;height:64px;border-radius:50%;background:var(--panel2);line-height:64px;font-size:22px;margin:0 auto">🎭</div>';
-    castHtml += '<div class="cast-card" data-action="person" data-ref="' + cidx + '">' + img + '<div class="cn">' + esc(c.name) + '</div><div class="cc">' + esc(c.character||'') + '</div></div>';
+    var followedC = isFollowed(c.name);
+    var ring = followedC ? ' followed-ring' : '';
+    var img = c.profile_path ? '<img class="' + ring.trim() + '" src="' + IMG + 'w185' + c.profile_path + '">' : '<div class="cast-noimg' + ring + '">🎭</div>';
+    castHtml += '<div class="cast-card" data-action="person" data-ref="' + cidx + '"' + (followedC?' title="Following"':'') + '>' + img + '<div class="cn">' + esc(c.name) + '</div><div class="cc">' + esc(c.character||'') + '</div></div>';
   }
 
   var ridx = ref({ type:'ratemovie', movie:m });
@@ -1653,14 +1669,14 @@ function toggleDictation(targetId, btn){
 function followPerson(name, from){
   if(PEOPLE.some(function(p){ return p.name.toLowerCase()===name.toLowerCase(); })) return;
   var optimistic = { id:'tmp'+Math.random(), name:name, added_from:from||null, created_at:new Date().toISOString() };
-  PEOPLE.unshift(optimistic); refreshCounts(); renderPeople();
+  PEOPLE.unshift(optimistic); refreshCounts(); renderPeople(); refreshPersonDrawer(); refreshMovieCard();
   SUPA.from('followed_people').insert({ name:name, added_from:from||null }).select()
     .then(function(res){ if(res.error) throw new Error(res.error.message); var rows=res.data; if(rows&&rows[0]){ PEOPLE = PEOPLE.map(function(p){ return p.id===optimistic.id ? rows[0] : p; }); renderPeople(); } toast('Following ' + name, 'ok'); })
     .catch(function(e){ toast('⚠️ Follow failed: ' + e.message, 'err'); loadCloud(); });
 }
 function unfollowPerson(row){
   PEOPLE = PEOPLE.filter(function(p){ return p.id!==row.id; });
-  refreshCounts(); renderPeople(); closeDrawer();
+  refreshCounts(); renderPeople(); refreshPersonDrawer(); refreshMovieCard();
   SUPA.from('followed_people').delete().eq('id', row.id)
     .then(function(res){ if(res.error) throw new Error(res.error.message); toast('Unfollowed ' + row.name, 'ok'); })
     .catch(function(e){ toast('⚠️ ' + e.message, 'err'); loadCloud(); });
@@ -1956,7 +1972,7 @@ document.addEventListener('click', function(ev){
   else if(action==='wladdclear'){ addWatchlist(r.title, r.year, r.source); el('wlSearchOut').innerHTML=''; el('wlq').value=''; }
   else if(action==='wlremove'){ removeWatchlist(r.row); }
   else if(action==='watched'){ removeWatchlist(r.row, true); openRatingForm({ title:r.row.title, year:r.row.year }); }
-  else if(action==='follow'){ followPerson(r.name, r.from); closeDrawer(); }
+  else if(action==='follow'){ followPerson(r.name, r.from); }
   else if(action==='followclear'){ followPerson(r.name, 'manual add'); el('pSearchOut').innerHTML=''; el('pq').value=''; }
   else if(action==='unfollow'){ unfollowPerson(r.row); }
   else if(action==='wlsearch') wlSearch();
