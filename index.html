@@ -1186,7 +1186,12 @@ function movieCardHTML(m){
     var followedC = isFollowed(c.name);
     var ring = followedC ? ' followed-ring' : '';
     var img = c.profile_path ? '<img class="' + ring.trim() + '" src="' + IMG + 'w185' + c.profile_path + '">' : '<div class="cast-noimg' + ring + '">🎭</div>';
-    var aidx = ref({ type:'ageinfo', id:c.id, name:c.name, movieYear:year?Number(year):null, character:c.character||'', movieTitle:m.title, movieId:m.id });
+    // Character-still search costs real money per uncached lookup, so it's scoped to films
+    // actually on the show -- character/movieTitle/movieId are left blank for everything else,
+    // which keeps showAgeInfo() from ever calling loadCharacterPhotos() off the Rewatchables list.
+    // Era photos (free, TMDB/Wikimedia only) stay available on every movie card either way.
+    var aidx = ref({ type:'ageinfo', id:c.id, name:c.name, movieYear:year?Number(year):null,
+      character: onRW ? (c.character||'') : '', movieTitle: onRW ? m.title : '', movieId: onRW ? m.id : null });
     castHtml += '<div class="cast-card" data-action="person" data-ref="' + cidx + '"' + (followedC?' title="Following"':'') + '>'
       + '<span class="age-btn" data-action="ageinfo" data-ref="' + aidx + '" title="Age + photos around ' + esc(year||'') + '">i</span>'
       + img + '<div class="cn">' + esc(c.name) + '</div><div class="cc">' + esc(c.character||'') + '</div></div>';
