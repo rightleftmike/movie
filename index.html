@@ -1301,8 +1301,13 @@ function filmRow(mv, sub){
   var midx = ref({ type:'movieById', id: mv.id });
   var mine = myFind(mv.title, y);
   var right;
-  if(mine){ right = '<span class="badge mine">' + starsFor(mine.rating) + '</span>'; }
-  else {
+  if(mine){
+    // Same split pattern as everywhere else a rating badge lives: the badge itself opens the
+    // rating form to view/edit -- the badge already makes the rating visible inline, so there's
+    // no need for a separate "In Your Ratings" list elsewhere in the drawer.
+    var ridx = ref({ type:'ratefilm', title:mv.title, year:y?Number(y):null });
+    right = '<span class="badge mine" style="cursor:pointer" data-action="rate" data-ref="' + ridx + '" title="View / edit review">' + starsFor(mine.rating) + '</span>';
+  } else {
     var widx = ref({ type:'wladd', title:mv.title, year:y?Number(y):null, source:'person drawer' });
     right = wlFind(mv.title, y) ? '<span class="badge">📋</span>' : '<button class="btn btn-outline btn-sm" data-action="wladd" data-ref="' + widx + '">+WL</button>';
   }
@@ -1319,18 +1324,20 @@ function personDrawerHTML(p){
       if(!seen[c.id]){ seen[c.id]=1; credits.push({ mv:c, role:c.job }); }
     }
   });
-  var onShow = [], inRatings = [], onWl = [], rest = [];
+  // No separate "In Your Ratings" bucket -- every film row already shows the rating badge inline
+  // (via filmRow, clickable to view/edit), so a rated film just surfaces under On The Rewatchables
+  // / On Watchlist / Notable Films like any other, with its rating visible right there.
+  var onShow = [], onWl = [], rest = [], ratedCount = 0;
   credits.forEach(function(cr){
     var y = (cr.mv.release_date||'').slice(0,4);
+    if(myFind(cr.mv.title, y)) ratedCount++;
     if(rwFind(cr.mv.title, y)) onShow.push(cr);
-    else if(myFind(cr.mv.title, y)) inRatings.push(cr);
     else if(wlFind(cr.mv.title, y)) onWl.push(cr);
     else rest.push(cr);
   });
-  credits.forEach(function(cr){ var y=(cr.mv.release_date||'').slice(0,4); if(rwFind(cr.mv.title,y) && myFind(cr.mv.title,y)) { if(inRatings.indexOf(cr)<0) inRatings.push(cr); } });
   rest.sort(function(a,b){ return (b.mv.vote_count||0)-(a.mv.vote_count||0); });
   var byDate = function(a,b){ return (b.mv.release_date||'').localeCompare(a.mv.release_date||''); };
-  onShow.sort(byDate); inRatings.sort(byDate); onWl.sort(byDate);
+  onShow.sort(byDate); onWl.sort(byDate);
 
   var followedRow = null;
   for(i=0;i<PEOPLE.length;i++){ if(PEOPLE[i].name.toLowerCase() === p.name.toLowerCase()) followedRow = PEOPLE[i]; }
@@ -1347,7 +1354,7 @@ function personDrawerHTML(p){
   var dept = p.known_for_department || '';
   var html = '<button class="dr-x" data-action="closedrawer">✕ Close</button>'
     + '<div class="dr-head">' + img + '<div><h2 style="font-size:24px">' + esc(p.name) + '</h2><div class="muted">' + esc(dept) + (p.birthday ? ' · b. ' + esc(p.birthday.slice(0,4)) : '') + '</div><div style="margin-top:6px">' + fbtn + '</div></div></div>'
-    + '<div class="dr-stats"><span><b>' + onShow.length + '</b> on show</span><span><b>' + inRatings.length + '</b> in my ratings</span><span><b>' + onWl.length + '</b> on watchlist</span><span><b>' + credits.length + '</b> credits</span></div>';
+    + '<div class="dr-stats"><span><b>' + onShow.length + '</b> on show</span><span><b>' + ratedCount + '</b> in my ratings</span><span><b>' + onWl.length + '</b> on watchlist</span><span><b>' + credits.length + '</b> credits</span></div>';
 
   function section(title, arr, cap){
     if(!arr.length) return '';
@@ -1356,7 +1363,6 @@ function personDrawerHTML(p){
     return s + '</div>';
   }
   html += section('🎙 On The Rewatchables', onShow);
-  html += section('⭐ In Your Ratings', inRatings);
   html += section('📋 On Watchlist', onWl);
   html += section('Notable Films', rest, 12);
   return html;
