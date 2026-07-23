@@ -142,12 +142,16 @@ label{font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:.0
 .mic-btn.listening{color:var(--red);border-color:var(--red);animation:micpulse 1s ease-in-out infinite}
 @keyframes micpulse{0%,100%{opacity:1}50%{opacity:.45}}
 .formgrid{display:grid;grid-template-columns:1fr 1fr;gap:0 12px}
-.mini-player{position:fixed;left:0;right:0;bottom:-100px;background:var(--panel2);border-top:1px solid var(--gold-dim);z-index:95;padding:8px 14px;display:flex;align-items:center;gap:10px;transition:bottom .22s ease;box-shadow:0 -8px 24px #000b}
+.mini-player{position:fixed;left:0;right:0;bottom:-160px;background:var(--panel2);border-top:1px solid var(--gold-dim);z-index:95;padding:8px 14px 10px;display:flex;flex-direction:column;gap:6px;transition:bottom .22s ease;box-shadow:0 -8px 24px #000b}
 .mini-player.open{bottom:0}
-.mini-player .mp-title{font-size:12.5px;color:var(--gold);flex-shrink:0;max-width:32vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.mini-player audio{flex:1;min-width:0;height:32px}
+.mp-row1{display:flex;align-items:center;gap:10px}
+.mini-player .mp-title{font-size:12.5px;color:var(--gold);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .mini-player .mp-x{background:none;border:none;color:var(--dim);font-size:18px;cursor:pointer;padding:2px 8px;flex-shrink:0}
 .mini-player .mp-x:hover{color:var(--txt)}
+.mp-controls{display:flex;align-items:center;justify-content:center;gap:16px}
+.mp-btn{background:var(--panel);border:1px solid var(--line);color:var(--txt);border-radius:20px;padding:7px 16px;font-size:13px;cursor:pointer}
+.mp-btn:hover{border-color:var(--gold-dim);color:var(--gold)}
+.mp-btn.mp-play{background:var(--gold);color:#171307;border-color:var(--gold);font-weight:700;padding:9px 24px;font-size:16px;min-width:52px}
 .toast-box{position:fixed;bottom:14px;left:50%;transform:translateX(-50%);z-index:99;display:flex;flex-direction:column;gap:6px;width:min(440px,92vw)}
 .toast{padding:11px 15px;border-radius:10px;font-size:13.5px;background:var(--panel2);border:1px solid var(--line);box-shadow:0 8px 24px #000b}
 .toast.err{border-color:var(--red);color:#e8b0a6}
@@ -170,7 +174,11 @@ label{font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:.0
 .kv b{color:var(--txt)}
 hr.gold{border:none;border-top:1px solid var(--line);margin:14px 0}
 .right{margin-left:auto}
-@media(max-width:520px){.formgrid{grid-template-columns:1fr}.card-top img.poster{width:92px}}
+@media(max-width:520px){.formgrid{grid-template-columns:1fr}
+  /* Side-by-side poster + text at this width left a tall dead gutter under the (short) poster
+     once the text column ran long -- title, badges, facts, synopsis routinely run well past the
+     bottom of a 92px-wide poster. Stack instead: poster full-width on top, text below it. */
+  .card-top{flex-direction:column}.card-top img.poster{width:150px;align-self:center}}
 body.preauth header, body.preauth #appWrap{display:none!important}
 .auth-gate{position:fixed;inset:0;background:radial-gradient(120% 90% at 50% 0%,#141009,#0b0a08);z-index:200;display:none;flex-direction:column;align-items:center;justify-content:center;padding:24px}
 .auth-card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:26px 22px;width:min(400px,94vw);text-align:center;box-shadow:0 20px 60px #000a}
@@ -308,9 +316,16 @@ body.preauth header, body.preauth #appWrap{display:none!important}
 <div class="modal-veil" id="ageVeil"><div class="modal" id="ageModal" style="max-width:380px"></div></div>
 <div class="modal-veil" id="lbVeil" data-action="closelightbox" style="z-index:90"><img id="lbImg" style="max-width:92vw;max-height:92vh;display:block;margin:40px auto;border-radius:8px"></div>
 <div class="mini-player" id="miniPlayer">
-  <div class="mp-title" id="mpTitle"></div>
-  <audio id="mpAudio" controls preload="none"></audio>
-  <button class="mp-x" data-action="closeplayer" title="Stop and close">✕</button>
+  <div class="mp-row1">
+    <div class="mp-title" id="mpTitle"></div>
+    <button class="mp-x" data-action="closeplayer" title="Stop and close">✕</button>
+  </div>
+  <div class="mp-controls">
+    <button class="mp-btn" data-action="mpback" title="Back 30 seconds">⏪ 30</button>
+    <button class="mp-btn mp-play" id="mpPlayBtn" data-action="mptoggle" title="Play / pause">▶</button>
+    <button class="mp-btn" data-action="mpfwd" title="Forward 30 seconds">30 ⏩</button>
+  </div>
+  <audio id="mpAudio" preload="none" style="display:none"></audio>
 </div>
 <div class="toast-box" id="toasts"></div>
 
@@ -1473,6 +1488,16 @@ function closePlayer(){
   var mp = el('miniPlayer');
   if(mp) mp.classList.remove('open');
 }
+function mpToggle(){
+  var audio = el('mpAudio');
+  if(!audio || !audio.src) return;
+  if(audio.paused) audio.play().catch(function(){}); else audio.pause();
+}
+function mpSeek(deltaSeconds){
+  var audio = el('mpAudio');
+  if(!audio || !audio.src) return;
+  audio.currentTime = Math.max(0, (audio.currentTime || 0) + deltaSeconds);
+}
 function listenToEpisode(){
   var box = el('epBox');
   if(box) box.scrollIntoView({ behavior:'smooth', block:'start' });
@@ -2274,6 +2299,9 @@ document.addEventListener('click', function(ev){
   else if(action==='playep'){ if(r) playEpisode(r.title, r.url); }
   else if(action==='closeplayer') closePlayer();
   else if(action==='listenep') listenToEpisode();
+  else if(action==='mptoggle') mpToggle();
+  else if(action==='mpback') mpSeek(-30);
+  else if(action==='mpfwd') mpSeek(30);
   else if(action==='mic') toggleDictation(t.getAttribute('data-target'), t);
   else if(action==='rate'){
     if(r && r.type==='ratemovie'){ var y=(r.movie.release_date||'').slice(0,4); openRatingForm({ title:r.movie.title, year:y?Number(y):null, movie:r.movie }); }
@@ -2336,6 +2364,17 @@ el('setTmdb').addEventListener('change', function(){ localStorage.setItem('tmdb_
 document.addEventListener('click', function(e){ if(!e.target.closest('.searchrow')) hideAC(); });
 el('authEmail').addEventListener('keydown', function(e){ if(e.key==='Enter') sendMagicLink(); });
 el('obName').addEventListener('keydown', function(e){ if(e.key==='Enter') saveProfile(); });
+
+// Keeps the play/pause glyph honest regardless of what triggered the state change (button click,
+// the episode finishing, a phone lock-screen media-key press, etc.) instead of toggling it
+// optimistically inside mpToggle() and risking it drifting out of sync with reality.
+(function(){
+  var audio = el('mpAudio'), btn = el('mpPlayBtn');
+  if(!audio || !btn) return;
+  audio.addEventListener('play', function(){ btn.textContent = '⏸'; });
+  audio.addEventListener('pause', function(){ btn.textContent = '▶'; });
+  audio.addEventListener('ended', function(){ btn.textContent = '▶'; });
+})();
 
 /* ================= INIT ================= */
 el('setTmdb').value = tmdbKey();
