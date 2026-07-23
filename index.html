@@ -53,10 +53,12 @@ label{font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:.0
 .ac-item:hover{background:#221e14}
 .ac-item .src{font-size:11px;color:var(--dim)}
 .results{display:grid;grid-template-columns:repeat(auto-fill,minmax(105px,1fr));gap:10px;margin-top:16px}
-.poster-tile{cursor:pointer;border-radius:8px;overflow:hidden;background:var(--panel);border:1px solid var(--line)}
+.poster-tile{cursor:pointer;border-radius:8px;overflow:hidden;background:var(--panel);border:1px solid var(--line);position:relative}
 .poster-tile img{width:100%;aspect-ratio:2/3;object-fit:cover;display:block}
 .poster-tile .pt-t{padding:6px 7px;font-size:12px;line-height:1.25}
 .poster-tile .pt-y{color:var(--dim);font-size:11px}
+.onshow-badge{position:absolute;top:6px;right:8px;background:var(--gold);color:#171307;font-size:10px;font-weight:700;padding:1px 6px;border-radius:8px;line-height:1.5}
+.onshow-badge:empty{display:none}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;margin-top:16px}
 .card-top{display:flex;gap:14px}
 .card-top img.poster{width:120px;border-radius:8px;flex-shrink:0;align-self:flex-start}
@@ -251,7 +253,7 @@ body.preauth header, body.preauth #appWrap{display:none!important}
     </div>
     <div id="pSearchOut" class="rowlist" style="margin-top:8px"></div>
     <div class="controls" style="margin-top:14px">
-      <select id="peopleSort"><option value="az">Sort: A–Z</option><option value="recent">Sort: Recently added</option></select>
+      <select id="peopleSort"><option value="az">Sort: A–Z</option><option value="recent">Sort: Recently added</option><option value="onshow">Sort: Most Rewatchables</option></select>
     </div>
     <div class="results" id="peopleGrid" style="margin-top:10px;grid-template-columns:repeat(auto-fill,minmax(140px,1fr))"></div>
   </div>
@@ -935,23 +937,79 @@ function renderWatchlist(){
 /* ================= RENDER: PEOPLE ================= */
 function renderPeople(){
   var srt = el('peopleSort') ? el('peopleSort').value : 'az';
+  if(srt === 'onshow'){
+    // Needs every count resolved before it can sort, unlike A-Z/Recent which sort on data
+    // already in hand -- show a brief loading state, then render once counts are in (cached
+    // after the first pass, so switching back to this sort later is instant).
+    el('peopleGrid').innerHTML = '<p class="muted"><span class="spin"></span> Counting Rewatchables appearances…</p>';
+    Promise.all(PEOPLE.map(function(p){ return getOnShowCount(p.name); })).then(function(){
+      var sorted = PEOPLE.slice().sort(function(a,b){
+        var ca = ONSHOW_CACHE[a.name.toLowerCase()] || 0, cb = ONSHOW_CACHE[b.name.toLowerCase()] || 0;
+        return cb - ca || a.name.localeCompare(b.name);
+      });
+      renderPeopleGrid(sorted);
+    });
+    return;
+  }
   var arr = PEOPLE.slice();
   if(srt==='recent') arr.sort(function(a,b){ return (b.created_at||'').localeCompare(a.created_at||''); });
   else arr.sort(function(a,b){ return a.name.localeCompare(b.name); });
+  renderPeopleGrid(arr);
+}
+function renderPeopleGrid(arr){
   var html = '';
   for(var i=0;i<arr.length;i++){
     (function(p){
       var pidx = ref({ type:'personByName', name:p.name });
       var uidx = ref({ type:'unfollow', row:p });
+      var pid = p.id.replace(/-/g,'');
       html += '<div class="poster-tile" style="text-align:center;padding:12px 8px" data-action="person" data-ref="' + pidx + '">'
-        + '<div id="pimg_' + p.id.replace(/-/g,'') + '" style="width:74px;height:74px;border-radius:50%;background:var(--panel2);margin:0 auto;overflow:hidden"></div>'
+        + '<span class="onshow-badge" id="pcount_' + pid + '" title="Rewatchables appearances"></span>'
+        + '<div id="pimg_' + pid + '" style="width:74px;height:74px;border-radius:50%;background:var(--panel2);margin:0 auto;overflow:hidden"></div>'
         + '<div style="margin-top:7px;font-size:13px;font-weight:500">' + esc(p.name) + '</div>'
-        + '<div class="muted" id="prole_' + p.id.replace(/-/g,'') + '" style="font-size:11px"></div>'
+        + '<div class="muted" id="prole_' + pid + '" style="font-size:11px"></div>'
         + '<button class="btn btn-red btn-sm" style="margin-top:7px" data-action="unfollow" data-ref="' + uidx + '">Unfollow</button></div>';
     })(arr[i]);
   }
   el('peopleGrid').innerHTML = html || '<p class="muted">Not following anyone yet.</p>';
-  arr.forEach(function(p){ loadPersonThumb(p); });
+  arr.forEach(function(p){ loadPersonThumb(p); loadPersonOnShowBadge(p); });
+}
+// Rewatchables-appearance count per followed person -- cached across renders/tab switches so
+// re-sorting or reopening Following doesn't re-fetch. Cross-checks TMDB combined_credits (cast +
+// director/writer/DP crew jobs) against the episode list the same way the person drawer's "On
+// The Rewatchables" section does.
+var ONSHOW_CACHE = {};
+function getOnShowCount(name){
+  var key = name.toLowerCase();
+  if(ONSHOW_CACHE[key] != null) return Promise.resolve(ONSHOW_CACHE[key]);
+  return tmdb('search/person', { query:name }).then(function(res){
+    var hit = (res.results||[])[0];
+    if(!hit){ ONSHOW_CACHE[key] = 0; return 0; }
+    return tmdbPerson(hit.id).then(function(p){
+      var cc = p.combined_credits || {}, seen = {}, count = 0;
+      (cc.cast||[]).forEach(function(c){
+        if(c.media_type==='movie' && !seen[c.id]){
+          var y = (c.release_date||'').slice(0,4);
+          if(rwFind(c.title, y)){ seen[c.id]=1; count++; }
+        }
+      });
+      (cc.crew||[]).forEach(function(c){
+        if(c.media_type==='movie' && !seen[c.id] && ['Director','Screenplay','Writer','Director of Photography'].indexOf(c.job)>=0){
+          var y2 = (c.release_date||'').slice(0,4);
+          if(rwFind(c.title, y2)){ seen[c.id]=1; count++; }
+        }
+      });
+      ONSHOW_CACHE[key] = count;
+      return count;
+    });
+  }).catch(function(){ ONSHOW_CACHE[key] = 0; return 0; });
+}
+function loadPersonOnShowBadge(p){
+  var pid = p.id.replace(/-/g,'');
+  getOnShowCount(p.name).then(function(count){
+    var box = el('pcount_' + pid);
+    if(box) box.textContent = count;
+  });
 }
 // TMDB's known_for_department is "Acting"/"Directing"/"Writing"/etc -- shorten to a single word
 // (Actor/Director/Writer) so it reads as a compact role tag under the name instead of a full
