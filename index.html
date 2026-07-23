@@ -89,12 +89,13 @@ label{font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:.0
 .controls{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;align-items:center}
 .controls select{width:auto;padding:7px 10px;font-size:13px}
 .rgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:9px}
-.rcard{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:11px 12px;cursor:pointer}
+.rcard{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:11px 12px}
 .rcard:hover{border-color:var(--gold-dim)}
+.rcard-main{cursor:pointer}
 .rcard .rt{font-weight:700;font-size:14px;line-height:1.25}
 .rcard .ry{color:var(--dim);font-size:12px}
 .rcard .rr{margin-top:6px;font-size:12px;color:var(--gold)}
-.rcard .noteflag{float:right;font-size:12px}
+.rcard .noteflag{float:right;font-size:13px;color:var(--gold)}
 .rowlist{display:flex;flex-direction:column;gap:6px}
 .rowitem{display:flex;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:9px 12px}
 .rowitem .grow{flex:1;min-width:0;cursor:pointer}
@@ -822,10 +823,15 @@ function renderRatings(){
     var r = arr[i];
     var hasNotes = r.vibe||r.pulled_in||r.fav_actor||r.fav_scene||r.didnt_click||r.notes;
     var idx = ref({ type:'movie', title:r.title, year:r.year });
-    html += '<div class="rcard" data-action="movie" data-ref="' + idx + '">'
-      + (hasNotes ? '<span class="noteflag" title="has notes">📝</span>' : '')
-      + '<div class="rt">' + esc(r.title) + '</div><div class="ry">' + esc(r.year||'') + '</div>'
-      + '<div class="rr">' + starsFor(r.rating) + '</div></div>';
+    var ridx = ref({ type:'ratefilm', title:r.title, year:r.year });
+    // Two separate click targets, same pattern as the Show List row: the title/year area opens
+    // the full movie detail card, the star line opens the rating form to view/edit the review.
+    html += '<div class="rcard">'
+      + (hasNotes ? '<span class="noteflag" title="Full review written">✎</span>' : '')
+      + '<div class="rcard-main" data-action="movie" data-ref="' + idx + '">'
+      + '<div class="rt">' + esc(r.title) + '</div><div class="ry">' + esc(r.year||'') + '</div></div>'
+      + '<div class="rr" style="cursor:pointer" data-action="rate" data-ref="' + ridx + '" title="View / edit review">' + starsFor(r.rating) + '</div>'
+      + '</div>';
   }
   el('rGrid').innerHTML = html || '<p class="muted">No ratings match.</p>';
 }
