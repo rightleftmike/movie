@@ -1186,7 +1186,7 @@ function movieCardHTML(m){
     var followedC = isFollowed(c.name);
     var ring = followedC ? ' followed-ring' : '';
     var img = c.profile_path ? '<img class="' + ring.trim() + '" src="' + IMG + 'w185' + c.profile_path + '">' : '<div class="cast-noimg' + ring + '">🎭</div>';
-    var aidx = ref({ type:'ageinfo', id:c.id, name:c.name, movieYear:year?Number(year):null });
+    var aidx = ref({ type:'ageinfo', id:c.id, name:c.name, movieYear:year?Number(year):null, character:c.character||'', movieTitle:m.title });
     castHtml += '<div class="cast-card" data-action="person" data-ref="' + cidx + '"' + (followedC?' title="Following"':'') + '>'
       + '<span class="age-btn" data-action="ageinfo" data-ref="' + aidx + '" title="Age + photos around ' + esc(year||'') + '">i</span>'
       + img + '<div class="cn">' + esc(c.name) + '</div><div class="cc">' + esc(c.character||'') + '</div></div>';
@@ -1233,13 +1233,19 @@ function movieCardHTML(m){
 }
 
 /* ================= AGE / ERA PHOTOS (free feature -- no AI, no paid API) =================
-   Two data points, both sourced without any AI call: the actor's rough age at release (basic
-   birthdate math off TMDB's free person details) and, best-effort, a few photos from around that
+   Two halves, both sourced without any AI call. Left: the actor's rough age at release (basic
+   birthdate math off TMDB's free person details) plus, best-effort, a few photos from around that
    year via Wikimedia Commons' free "Category:{Name} in {Year}" convention. That convention only
    exists for well-documented public figures, so most cast members will fall back to their
-   regular TMDB gallery photos, clearly labeled as not era-specific rather than implying they are. */
+   regular TMDB gallery photos, clearly labeled as not era-specific rather than implying they are.
+   Right: a best-effort search for stills of the actor specifically as their character in this
+   movie (e.g. "Michael Ironside as Richter, Total Recall"), via free-text search over Wikimedia
+   Commons file pages -- there's no API that cleanly indexes "photos of character X in film Y", so
+   this runs a few progressively broader queries and takes the first that returns anything. Real
+   coverage exists for iconic/heavily-documented films but is thin or empty for most others, so
+   results are always labeled as a best-effort search rather than guaranteed matches. */
 function closeAgeInfo(){ el('ageVeil').classList.remove('open'); }
-function showAgeInfo(id, name, movieYear){
+function showAgeInfo(id, name, movieYear, character, movieTitle){
   el('ageModal').innerHTML = '<button class="modal-x" data-action="closeage" title="Close">✕</button>'
     + '<h3 style="margin-top:0">' + esc(name) + '</h3>'
     + '<p class="muted" style="margin-top:4px"><span class="spin"></span> Loading…</p>';
@@ -1250,10 +1256,15 @@ function showAgeInfo(id, name, movieYear){
       var by = parseInt(p.birthday.slice(0,4), 10);
       if(by) ageLine = '<p class="muted" style="margin-top:2px">Roughly age ' + (movieYear - by) + ' around ' + esc(movieYear) + '</p>';
     }
+    var charSection = (character && movieTitle)
+      ? '<hr class="gold" style="margin:12px 0"><div id="ageCharPhotos"><p class="muted" style="margin-top:4px"><span class="spin"></span> Searching for stills as ' + esc(character) + '…</p></div>'
+      : '';
     el('ageModal').innerHTML = '<button class="modal-x" data-action="closeage" title="Close">✕</button>'
       + '<h3 style="margin-top:0">' + esc(name) + '</h3>' + ageLine
-      + '<div id="agePhotos"><p class="muted" style="margin-top:8px"><span class="spin"></span> Finding photos from around ' + esc(movieYear||'') + '…</p></div>';
+      + '<div id="agePhotos"><p class="muted" style="margin-top:8px"><span class="spin"></span> Finding photos from around ' + esc(movieYear||'') + '…</p></div>'
+      + charSection;
     loadAgePhotos(id, name, movieYear);
+    if(character && movieTitle) loadCharacterPhotos(name, character, movieTitle);
   }).catch(function(){
     el('ageModal').innerHTML = '<button class="modal-x" data-action="closeage" title="Close">✕</button><h3 style="margin-top:0">' + esc(name) + '</h3><p style="color:var(--red)">⚠️ Could not load info</p>';
   });
@@ -1304,6 +1315,54 @@ function paintAgePhotos(photos, label){
   if(!box) return;
   if(!photos.length){ box.innerHTML = '<p class="muted" style="margin-top:8px">' + label + '</p>'; return; }
   var html = '<div class="muted" style="font-size:11px;margin-top:8px">' + label + '</div><div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">';
+  photos.forEach(function(p){
+    var pidx = ref({ type:'viewphoto', url:p.full });
+    html += '<img src="' + p.thumb + '" data-action="viewphoto" data-ref="' + pidx + '" title="Click to enlarge" style="width:70px;height:90px;object-fit:cover;border-radius:6px;border:1px solid var(--line);cursor:pointer">';
+  });
+  box.innerHTML = html + '</div>';
+}
+// Free-text search over Wikimedia Commons file pages (namespace 6). Unlike the year-category
+// lookup above, this has no structured convention to rely on -- it's just full-text search, so
+// results are hit-or-miss and not verified to actually depict the character.
+function fetchCommonsSearchPhotos(query, limit){
+  var url = 'https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch='
+    + encodeURIComponent(query) + '&gsrnamespace=6&gsrlimit=' + (limit||12)
+    + '&prop=imageinfo&iiprop=url|thumburl&iiurlwidth=300&format=json&origin=*';
+  return fetch(url).then(function(r){ return r.json(); }).then(function(data){
+    var pages = (data.query && data.query.pages) || {};
+    var out = [];
+    Object.keys(pages).forEach(function(k){
+      var ii = pages[k].imageinfo && pages[k].imageinfo[0];
+      var full = ii && ii.url;
+      if(full && /\.(jpg|jpeg|png)$/i.test(full)) out.push({ thumb: ii.thumburl || full, full: full });
+    });
+    return out;
+  }).catch(function(){ return []; });
+}
+function loadCharacterPhotos(actorName, character, movieTitle){
+  var queries = [
+    actorName + ' as ' + character + ' ' + movieTitle,
+    character + ' ' + movieTitle,
+    actorName + ' ' + movieTitle
+  ];
+  function tryQuery(i){
+    if(i >= queries.length){ paintCharacterPhotos([], character); return; }
+    fetchCommonsSearchPhotos(queries[i], 12).then(function(photos){
+      if(photos.length) paintCharacterPhotos(photos.slice(0,10), character);
+      else tryQuery(i + 1);
+    });
+  }
+  tryQuery(0);
+}
+function paintCharacterPhotos(photos, character){
+  var box = el('ageCharPhotos');
+  if(!box) return;
+  if(!photos.length){
+    box.innerHTML = '<p class="muted" style="margin-top:4px;font-size:11px">No stills found' + (character ? ' for ' + esc(character) : '') + ' — this search only turns up results for heavily-documented films.</p>';
+    return;
+  }
+  var label = 'As ' + esc(character) + ' (best-effort search, Wikimedia Commons)';
+  var html = '<div class="muted" style="font-size:11px;margin-top:4px">' + label + '</div><div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">';
   photos.forEach(function(p){
     var pidx = ref({ type:'viewphoto', url:p.full });
     html += '<img src="' + p.thumb + '" data-action="viewphoto" data-ref="' + pidx + '" title="Click to enlarge" style="width:70px;height:90px;object-fit:cover;border-radius:6px;border:1px solid var(--line);cursor:pointer">';
@@ -2140,7 +2199,7 @@ document.addEventListener('click', function(ev){
   }
   else if(action==='closedrawer') closeDrawer();
   else if(action==='closemodal') attemptCloseModal();
-  else if(action==='ageinfo'){ if(r) showAgeInfo(r.id, r.name, r.movieYear); }
+  else if(action==='ageinfo'){ if(r) showAgeInfo(r.id, r.name, r.movieYear, r.character, r.movieTitle); }
   else if(action==='closeage') closeAgeInfo();
   else if(action==='viewphoto'){ if(r) openLightbox(r.url); }
   else if(action==='closelightbox') closeLightbox();
