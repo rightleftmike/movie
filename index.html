@@ -700,19 +700,22 @@ function applySnapshot(arr, label, e){
   refreshCounts(); renderShow(); renderRatings();
 }
 // Builds the "All hosts/guests" dropdown from whatever names actually show up in the loaded
-// episode data (host + up to 4 guests per episode) -- alphabetical, host and guest names pooled
-// together since a person can appear as either across different episodes.
+// episode data (host + up to 4 guests per episode) -- alphabetical (so the browser's native
+// type-a-letter-to-jump still works), with an episode count next to each name so the frequent
+// cohosts/guests are still easy to spot without needing a frequency sort.
 function populateGuestFilter(){
   var sel = el('showGuest');
   if(!sel) return;
   var prev = sel.value;
-  var names = {};
+  var counts = {};
   RW.forEach(function(f){
-    if(f.host) names[f.host] = 1;
-    (f.guests||[]).forEach(function(g){ names[g] = 1; });
+    if(f.host) counts[f.host] = (counts[f.host]||0) + 1;
+    (f.guests||[]).forEach(function(g){ counts[g] = (counts[g]||0) + 1; });
   });
-  var list = Object.keys(names).sort(function(a,b){ return a.localeCompare(b); });
-  sel.innerHTML = '<option value="">All hosts/guests</option>' + list.map(function(n){ return '<option' + (n===prev?' selected':'') + '>' + esc(n) + '</option>'; }).join('');
+  var list = Object.keys(counts).sort(function(a,b){ return a.localeCompare(b); });
+  sel.innerHTML = '<option value="">All hosts/guests</option>' + list.map(function(n){
+    return '<option' + (n===prev?' selected':'') + ' value="' + esc(n) + '">' + esc(n) + ' (' + counts[n] + ')</option>';
+  }).join('');
 }
 
 
