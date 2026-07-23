@@ -142,16 +142,25 @@ label{font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:.0
 .mic-btn.listening{color:var(--red);border-color:var(--red);animation:micpulse 1s ease-in-out infinite}
 @keyframes micpulse{0%,100%{opacity:1}50%{opacity:.45}}
 .formgrid{display:grid;grid-template-columns:1fr 1fr;gap:0 12px}
-.mini-player{position:fixed;left:0;right:0;bottom:-160px;background:var(--panel2);border-top:1px solid var(--gold-dim);z-index:95;padding:8px 14px 10px;display:flex;flex-direction:column;gap:6px;transition:bottom .22s ease;box-shadow:0 -8px 24px #000b}
+.mini-player{position:fixed;left:0;right:0;bottom:-170px;background:var(--panel2);border-top:1px solid var(--gold-dim);z-index:95;padding:8px 14px 10px;display:flex;flex-direction:column;gap:5px;transition:bottom .22s ease;box-shadow:0 -8px 24px #000b}
 .mini-player.open{bottom:0}
 .mp-row1{display:flex;align-items:center;gap:10px}
 .mini-player .mp-title{font-size:12.5px;color:var(--gold);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.mini-player .mp-x{background:none;border:none;color:var(--dim);font-size:18px;cursor:pointer;padding:2px 8px;flex-shrink:0}
+.mini-player .mp-x{background:none;border:none;color:var(--dim);cursor:pointer;padding:2px 6px;flex-shrink:0;display:flex}
 .mini-player .mp-x:hover{color:var(--txt)}
-.mp-controls{display:flex;align-items:center;justify-content:center;gap:16px}
-.mp-btn{background:var(--panel);border:1px solid var(--line);color:var(--txt);border-radius:20px;padding:7px 16px;font-size:13px;cursor:pointer}
-.mp-btn:hover{border-color:var(--gold-dim);color:var(--gold)}
-.mp-btn.mp-play{background:var(--gold);color:#171307;border-color:var(--gold);font-weight:700;padding:9px 24px;font-size:16px;min-width:52px}
+.mp-progress{display:flex;align-items:center;gap:8px}
+.mp-time{font-size:10.5px;color:var(--dim);flex-shrink:0;min-width:30px}
+.mp-time.mp-time-end{text-align:right}
+.mp-seek{flex:1;-webkit-appearance:none;appearance:none;height:4px;border-radius:2px;background:var(--line);outline:none;cursor:pointer;margin:0}
+.mp-seek::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:12px;height:12px;border-radius:50%;background:var(--gold);cursor:pointer;margin-top:-4px;box-shadow:0 0 0 3px #0006}
+.mp-seek::-moz-range-thumb{width:12px;height:12px;border-radius:50%;background:var(--gold);border:none;cursor:pointer}
+.mp-seek::-moz-range-track{height:4px;border-radius:2px;background:var(--line)}
+.mp-controls{display:flex;align-items:center;justify-content:center;gap:22px}
+.mp-btn{background:none;border:none;color:var(--txt);cursor:pointer;display:flex;align-items:center;gap:2px;padding:6px;border-radius:50%}
+.mp-btn:hover{color:var(--gold)}
+.mp-btn.mp-play{background:var(--gold);color:#171307;border-radius:50%;width:40px;height:40px;justify-content:center;padding:0}
+.mp-btn.mp-play:hover{color:#171307;background:#dcb95d}
+.mp-btn .mp-skiplabel{font-size:10px;font-weight:600}
 .toast-box{position:fixed;bottom:14px;left:50%;transform:translateX(-50%);z-index:99;display:flex;flex-direction:column;gap:6px;width:min(440px,92vw)}
 .toast{padding:11px 15px;border-radius:10px;font-size:13.5px;background:var(--panel2);border:1px solid var(--line);box-shadow:0 8px 24px #000b}
 .toast.err{border-color:var(--red);color:#e8b0a6}
@@ -323,12 +332,27 @@ body.preauth header, body.preauth #appWrap{display:none!important}
 <div class="mini-player" id="miniPlayer">
   <div class="mp-row1">
     <div class="mp-title" id="mpTitle"></div>
-    <button class="mp-x" data-action="closeplayer" title="Stop and close">✕</button>
+    <button class="mp-x" data-action="closeplayer" title="Stop and close">
+      <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor"><path d="M18.3 5.71 12 12l6.3 6.29-1.41 1.42L10.59 13.4 4.29 19.7 2.88 18.29 9.17 12 2.88 5.71 4.29 4.29l6.3 6.3 6.29-6.3z"/></svg>
+    </button>
+  </div>
+  <div class="mp-progress">
+    <span class="mp-time" id="mpCur">0:00</span>
+    <input type="range" class="mp-seek" id="mpSeek" min="0" max="0" value="0" step="1">
+    <span class="mp-time mp-time-end" id="mpDur">0:00</span>
   </div>
   <div class="mp-controls">
-    <button class="mp-btn" data-action="mpback" title="Back 30 seconds">⏪ 30</button>
-    <button class="mp-btn mp-play" id="mpPlayBtn" data-action="mptoggle" title="Play / pause">▶</button>
-    <button class="mp-btn" data-action="mpfwd" title="Forward 30 seconds">30 ⏩</button>
+    <button class="mp-btn" data-action="mpback" title="Back 30 seconds">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M11 18V6l-8.5 6 8.5 6zM21 18V6l-8.5 6 8.5 6z"/></svg>
+      <span class="mp-skiplabel">30</span>
+    </button>
+    <button class="mp-btn mp-play" id="mpPlayBtn" data-action="mptoggle" title="Play / pause">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+    </button>
+    <button class="mp-btn" data-action="mpfwd" title="Forward 30 seconds">
+      <span class="mp-skiplabel">30</span>
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M13 6v12l8.5-6-8.5-6zM3 6v12l8.5-6-8.5-6z"/></svg>
+    </button>
   </div>
   <audio id="mpAudio" preload="none" style="display:none"></audio>
 </div>
@@ -1223,6 +1247,12 @@ function movieCardHTML(m){
     var mineIdx = ref({ type:'ratemovie', movie:m });
     badges += '<span class="badge mine" style="cursor:pointer" data-action="rate" data-ref="' + mineIdx + '" title="View / edit review">' + starsFor(mine.rating) + '</span>';
   }
+  // Deliberately just one small link, not a laid-out grid of provider logos -- streaming/rent/buy
+  // availability via JustWatch (TMDB's watch/providers), routed through TMDB's own watch page
+  // rather than a hand-built per-provider deep link (which would be exactly the unreliable
+  // guesswork this was meant to avoid).
+  var wp = m['watch/providers'] && m['watch/providers'].results && m['watch/providers'].results.US;
+  if(wp && wp.link) badges += '<a class="badge-link" href="' + esc(wp.link) + '" target="_blank" rel="noopener" title="Streaming/rent/buy options (JustWatch via TMDB)">📺 Where to Watch</a>';
 
   var facts = [];
   if(m.runtime) facts.push('<span>⏱ <b>' + m.runtime + ' min</b></span>');
@@ -1234,7 +1264,6 @@ function movieCardHTML(m){
   if(directors.length){ chips += '<label>Director</label><div class="chips">' + directors.map(function(p){ return personChip(p); }).join('') + '</div>'; }
   if(writers.length){ chips += '<label>Writers</label><div class="chips">' + writers.map(function(p){ return personChip(p, p.job); }).join('') + '</div>'; }
   if(dps.length){ chips += '<label>Cinematography</label><div class="chips">' + dps.map(function(p){ return personChip(p); }).join('') + '</div>'; }
-  var watchSection = watchProvidersHTML(m['watch/providers'] && m['watch/providers'].results && m['watch/providers'].results.US);
 
   var castHtml = '';
   for(var i=0;i<cast.length;i++){
@@ -1290,43 +1319,8 @@ function movieCardHTML(m){
     + '<p class="muted" style="margin-top:8px;font-size:13px">' + esc((m.overview||'').slice(0,260)) + '</p>'
     + '</div></div>'
     + chips
-    + watchSection
     + (castHtml ? '<label>Cast</label><div class="cast-strip">' + castHtml + '</div>' : '')
     + buttons + epSection + myNotes + '</div>';
-}
-// Streaming/rental/purchase availability, sourced from JustWatch via TMDB's watch/providers data
-// (the same feed JustWatch's own site runs on, bundled onto the movie fetch above). Deliberately
-// does NOT try to construct direct links to individual services (e.g. guessing a Netflix title
-// URL) -- TMDB's API terms require routing through their own watch page for this data, and hand
-// -built deep links are exactly the kind of unreliable guesswork that would turn this into the
-// "rabbit chase" this was built to avoid. The one link here is TMDB's own maintained page.
-function watchProvidersHTML(wp){
-  var html = '<hr class="gold"><h3>📺 Where to Watch</h3>';
-  var groups = [
-    { key:'flatrate', label:'Stream' },
-    { key:'free', label:'Free' },
-    { key:'ads', label:'Free with ads' },
-    { key:'rent', label:'Rent' },
-    { key:'buy', label:'Buy' }
-  ];
-  var any = false;
-  if(wp){
-    groups.forEach(function(g){
-      var list = wp[g.key];
-      if(!list || !list.length) return;
-      any = true;
-      html += '<div style="margin-top:6px"><label style="font-size:11px">' + g.label + '</label><div class="chips" style="margin-top:4px">'
-        + list.map(function(p){
-            var logo = p.logo_path ? '<img src="' + IMG + 'w45' + p.logo_path + '" style="width:20px;height:20px;border-radius:5px;vertical-align:middle;margin-right:5px">' : '';
-            return '<span class="chip" style="cursor:default">' + logo + esc(p.provider_name) + '</span>';
-          }).join('')
-        + '</div></div>';
-    });
-  }
-  if(!any) html += '<p class="muted" style="font-size:12.5px;margin-top:6px">Not currently available to stream, rent, or buy in the US (per JustWatch/TMDB) — this can lag real-world availability by a few days.</p>';
-  if(wp && wp.link) html += '<a href="' + esc(wp.link) + '" target="_blank" rel="noopener" style="font-size:12px;display:inline-block;margin-top:8px">View all options on TMDB →</a>';
-  html += '<p class="muted" style="font-size:10.5px;margin-top:6px">Streaming data by JustWatch, via TMDB.</p>';
-  return html;
 }
 
 /* ================= AGE / ERA PHOTOS (free feature -- no AI, no paid API) =================
@@ -1535,6 +1529,10 @@ function playEpisode(title, url){
 function closePlayer(){
   var audio = el('mpAudio');
   if(audio){ audio.pause(); audio.removeAttribute('src'); audio.load(); }
+  var seek = el('mpSeek');
+  if(seek){ seek.max = 0; seek.value = 0; }
+  if(el('mpCur')) el('mpCur').textContent = '0:00';
+  if(el('mpDur')) el('mpDur').textContent = '0:00';
   var mp = el('miniPlayer');
   if(mp) mp.classList.remove('open');
 }
@@ -2446,15 +2444,48 @@ document.addEventListener('click', function(e){ if(!e.target.closest('.searchrow
 el('authEmail').addEventListener('keydown', function(e){ if(e.key==='Enter') sendMagicLink(); });
 el('obName').addEventListener('keydown', function(e){ if(e.key==='Enter') saveProfile(); });
 
-// Keeps the play/pause glyph honest regardless of what triggered the state change (button click,
-// the episode finishing, a phone lock-screen media-key press, etc.) instead of toggling it
-// optimistically inside mpToggle() and risking it drifting out of sync with reality.
+// Keeps the play/pause glyph and progress bar honest regardless of what triggered the state
+// change (button click, the episode finishing, a phone lock-screen media-key press, a scrub,
+// etc.) instead of updating them optimistically inside mpToggle()/mpSeek() and risking drift.
 (function(){
-  var audio = el('mpAudio'), btn = el('mpPlayBtn');
-  if(!audio || !btn) return;
-  audio.addEventListener('play', function(){ btn.textContent = '⏸'; });
-  audio.addEventListener('pause', function(){ btn.textContent = '▶'; });
-  audio.addEventListener('ended', function(){ btn.textContent = '▶'; });
+  var audio = el('mpAudio'), btn = el('mpPlayBtn'), seek = el('mpSeek'), cur = el('mpCur'), dur = el('mpDur');
+  if(!audio || !btn || !seek) return;
+  var PLAY_SVG = '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
+  var PAUSE_SVG = '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>';
+  var scrubbing = false;
+  function fmtTime(s){
+    s = Math.max(0, Math.floor(s || 0));
+    var m = Math.floor(s / 60), sec = s % 60;
+    return m + ':' + (sec < 10 ? '0' : '') + sec;
+  }
+  function paintFill(){
+    var max = Number(seek.max) || 0;
+    var pct = max > 0 ? (Number(seek.value) / max * 100) : 0;
+    seek.style.background = 'linear-gradient(to right, var(--gold) 0%, var(--gold) ' + pct + '%, var(--line) ' + pct + '%, var(--line) 100%)';
+  }
+  audio.addEventListener('play', function(){ btn.innerHTML = PAUSE_SVG; });
+  audio.addEventListener('pause', function(){ btn.innerHTML = PLAY_SVG; });
+  audio.addEventListener('ended', function(){ btn.innerHTML = PLAY_SVG; });
+  audio.addEventListener('loadedmetadata', function(){
+    seek.max = Math.floor(audio.duration || 0);
+    if(dur) dur.textContent = fmtTime(audio.duration);
+    paintFill();
+  });
+  audio.addEventListener('timeupdate', function(){
+    if(scrubbing) return;
+    seek.value = Math.floor(audio.currentTime || 0);
+    if(cur) cur.textContent = fmtTime(audio.currentTime);
+    paintFill();
+  });
+  seek.addEventListener('input', function(){
+    scrubbing = true;
+    if(cur) cur.textContent = fmtTime(seek.value);
+    paintFill();
+  });
+  seek.addEventListener('change', function(){
+    audio.currentTime = Number(seek.value) || 0;
+    scrubbing = false;
+  });
 })();
 
 /* ================= INIT ================= */
