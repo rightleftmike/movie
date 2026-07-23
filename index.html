@@ -227,6 +227,7 @@ body.preauth header, body.preauth #appWrap{display:none!important}
     <div class="controls">
       <input type="text" id="showQ" placeholder="Filter episodes…" style="flex:1;min-width:150px">
       <select id="showSort"><option value="old">Oldest episodes</option><option value="new">Newest episodes</option><option value="az">A–Z</option></select>
+      <select id="showGuest"><option value="">All hosts/guests</option></select>
       <label style="margin:0;display:flex;align-items:center;gap:6px;text-transform:none;font-size:13px;cursor:pointer"><input type="checkbox" id="showUnrated" style="width:auto"> Unrated only</label>
     </div>
     <div class="rowlist" id="showList"></div>
@@ -338,7 +339,7 @@ var STRIPE_LINK_MONTHLY = 'https://buy.stripe.com/bJe00jgve6DH63P1n60oM02';
 var STRIPE_LINK_ANNUAL = 'https://buy.stripe.com/8x2dR9fra4vz0Jv4zi0oM03';
 
 /* ================= STATE ================= */
-var RW = [];            // episode list [{title,year,director,genres}]
+var RW = [];            // episode list [{title,year,director,genres,host,guests}]
 var MY = [];            // ratings rows from supabase
 var WL = [];            // watchlist rows
 var PEOPLE = [];        // followed_people rows
@@ -643,7 +644,7 @@ function loadSheet(){
     var rows = parseCSV(text);
     if(rows.length < 5) throw new Error('sheet looks empty');
     var head = rows[0].map(function(h){ return h.toLowerCase(); });
-    var iT=-1,iY=-1,iD=-1,iG=-1,iE=-1,iR=-1,j;
+    var iT=-1,iY=-1,iD=-1,iG=-1,iE=-1,iR=-1,iH=-1,iGu1=-1,iGu2=-1,iGu3=-1,iGu4=-1,j;
     for(j=0;j<head.length;j++){
       if(iT<0 && head[j].trim()==='title') iT=j;
       if(iY<0 && head[j].indexOf('release (year)')>=0) iY=j;
@@ -651,6 +652,11 @@ function loadSheet(){
       if(iG<0 && head[j].indexOf('genre')>=0) iG=j;
       if(iE<0 && head[j].indexOf('ep. no.')>=0 && head[j].indexOf('all movies')>=0) iE=j;
       if(iR<0 && head[j].indexOf('release date')>=0) iR=j;
+      if(iH<0 && head[j].trim()==='host') iH=j;
+      if(iGu1<0 && head[j].trim()==='guest 1') iGu1=j;
+      if(iGu2<0 && head[j].trim()==='guest 2') iGu2=j;
+      if(iGu3<0 && head[j].trim()==='guest 3') iGu3=j;
+      if(iGu4<0 && head[j].trim()==='guest 4') iGu4=j;
     }
     if(iT<0 || iY<0) throw new Error('columns not found');
     var out=[], seen={};
@@ -665,12 +671,14 @@ function loadSheet(){
       var epNo = iE>=0 ? (rows[j][iE]||'').trim() : '';
       var key = epNo ? ('ep'+epNo) : (norm(t)+'|'+y);
       if(seen[key]) continue; seen[key]=1;
-      out.push({ title:t, year:y, director:(rows[j][iD]||'').trim(), genres:(rows[j][iG]||'').replace(/;/g,', ').replace(/, $/,'').trim(), epNo:epNo, airDate:(iR>=0?(rows[j][iR]||'').trim():'') });
+      var guests = [iGu1,iGu2,iGu3,iGu4].map(function(gi){ return gi>=0 ? (rows[j][gi]||'').trim() : ''; }).filter(function(g){ return g; });
+      out.push({ title:t, year:y, director:(rows[j][iD]||'').trim(), genres:(rows[j][iG]||'').replace(/;/g,', ').replace(/, $/,'').trim(), epNo:epNo, airDate:(iR>=0?(rows[j][iR]||'').trim():''), host:(iH>=0?(rows[j][iH]||'').trim():''), guests:guests });
     }
     if(out.length < 50) throw new Error('too few rows parsed');
     RW = out; sheetLive = true;
     try{localStorage.setItem('rw_cache',JSON.stringify(out));}catch(_){}
     el('sheetStatus').innerHTML = '<span style="color:var(--green)">● Live from Google Sheet</span> — ' + RW.length + ' films';
+    populateGuestFilter();
     refreshCounts(); renderShow(); renderRatings();
   }).catch(function(e){
     sheetLive = false;
@@ -688,7 +696,23 @@ function applySnapshot(arr, label, e){
   RW = arr;
   el('sheetStatus').innerHTML = '<span style="color:var(--red)">● Sheet fetch failed</span> (' + esc(e.message) + ') — using ' + label + ' of ' + RW.length + ' films';
   toast('Episode list: using ' + label + ' (' + e.message + ')', 'err');
+  populateGuestFilter();
   refreshCounts(); renderShow(); renderRatings();
+}
+// Builds the "All hosts/guests" dropdown from whatever names actually show up in the loaded
+// episode data (host + up to 4 guests per episode) -- alphabetical, host and guest names pooled
+// together since a person can appear as either across different episodes.
+function populateGuestFilter(){
+  var sel = el('showGuest');
+  if(!sel) return;
+  var prev = sel.value;
+  var names = {};
+  RW.forEach(function(f){
+    if(f.host) names[f.host] = 1;
+    (f.guests||[]).forEach(function(g){ names[g] = 1; });
+  });
+  var list = Object.keys(names).sort(function(a,b){ return a.localeCompare(b); });
+  sel.innerHTML = '<option value="">All hosts/guests</option>' + list.map(function(n){ return '<option' + (n===prev?' selected':'') + '>' + esc(n) + '</option>'; }).join('');
 }
 
 
@@ -865,6 +889,7 @@ function ratingBadgeHTML(title, year){
 function renderShow(){
   var q = norm(el('showQ').value), unonly = el('showUnrated').checked;
   var srt = el('showSort') ? el('showSort').value : 'old';
+  var guestSel = el('showGuest') ? el('showGuest').value : '';
   var rated = 0, html = '', shown = 0;
   var list = RW.slice();
   if(srt==='new') list.reverse();
@@ -873,6 +898,7 @@ function renderShow(){
     var f = list[i], mine = myFind(f.title, f.year);
     if(mine) rated++;
     if(unonly && mine) continue;
+    if(guestSel && f.host!==guestSel && (f.guests||[]).indexOf(guestSel)<0) continue;
     if(q && norm(f.title).indexOf(q)<0 && norm(f.director).indexOf(q)<0) continue;
     shown++;
     var idx = ref({ type:'movie', title:f.title, year:f.year });
@@ -1867,6 +1893,7 @@ el('pq').addEventListener('keydown', function(e){ if(e.key==='Enter') peopleSear
 el('showQ').addEventListener('input', renderShow);
 el('showUnrated').addEventListener('change', renderShow);
 el('showSort').addEventListener('change', renderShow);
+el('showGuest').addEventListener('change', renderShow);
 el('peopleSort').addEventListener('change', renderPeople);
 el('fSort').addEventListener('change', renderRatings);
 el('setTmdb').addEventListener('change', function(){ localStorage.setItem('tmdb_key', el('setTmdb').value.trim()); toast('TMDB key saved', 'ok'); });
