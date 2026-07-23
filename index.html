@@ -83,6 +83,9 @@ label{font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:.0
 .stat{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 13px;text-align:center;flex:1;min-width:80px}
 .stat .n{font-family:'Bebas Neue';font-size:24px;color:var(--gold);line-height:1}
 .stat .l{font-size:10.5px;color:var(--dim);text-transform:uppercase;letter-spacing:.07em}
+.stat.clickable{cursor:pointer}
+.stat.clickable.sel{background:var(--gold);border-color:var(--gold)}
+.stat.clickable.sel .n,.stat.clickable.sel .l{color:#171307}
 .controls{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;align-items:center}
 .controls select{width:auto;padding:7px 10px;font-size:13px}
 .rgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:9px}
@@ -189,9 +192,7 @@ body.preauth header, body.preauth #appWrap{display:none!important}
   <div class="panel on" id="p-ratings">
     <div class="statsbar" id="statsBar"></div>
     <div class="controls">
-      <select id="fRating"><option value="">All ratings</option><option value="All-timer">All-timer ★★★★★</option><option value="Loved">Loved ★★★★</option><option value="Liked">Liked ★★★</option><option value="Meh">Meh ★★</option><option value="Disliked">Disliked ★</option></select>
-      <select id="fTier"><option value="">All tiers</option><option>Top 5</option><option>Top 10</option><option>Top 25</option><option>Top 50</option><option>Top 100</option><option>Outside Top 100</option></select>
-      <select id="fSort"><option value="tier">Sort: tier</option><option value="recent">Sort: recent</option><option value="az">Sort: A–Z</option></select>
+      <select id="fSort"><option value="recent">Sort: recent</option><option value="az">Sort: A–Z</option></select>
     </div>
     <div class="rgrid" id="rGrid"></div>
   </div>
@@ -745,10 +746,10 @@ function extractJSON(text){
 }
 function tasteProfile(){
   var lines = [], i, r;
-  var sorted = MY.slice().sort(function(a,b){ return tierRank(a.tier)-tierRank(b.tier); });
+  var sorted = MY.slice().sort(function(a,b){ return (RATING_STARS[b.rating]||0)-(RATING_STARS[a.rating]||0); });
   for(i=0;i<sorted.length;i++){
     r = sorted[i];
-    var l = r.title + ' (' + (r.year||'?') + ') — ' + r.rating + (r.tier ? ', ' + r.tier : '') + (r.times_seen ? ', seen ' + r.times_seen + 'x' : '');
+    var l = r.title + ' (' + (r.year||'?') + ') — ' + r.rating + (r.times_seen ? ', seen ' + r.times_seen + 'x' : '');
     var notes = [];
     if(r.vibe) notes.push('vibe/what stuck: ' + r.vibe);
     if(r.fav_actor) notes.push('standout: ' + r.fav_actor);
@@ -757,11 +758,10 @@ function tasteProfile(){
     lines.push(l);
   }
   var followed = PEOPLE.map(function(p){ return p.name; }).join(', ');
-  var s = 'MY FILM RATINGS (scale: All-timer > Loved > Liked > Meh > Disliked; tier = personal rank):\n' + lines.join('\n');
+  var s = 'MY FILM RATINGS (scale: All-timer > Loved > Liked > Meh > Disliked):\n' + lines.join('\n');
   if(followed) s += '\n\nPEOPLE I FOLLOW (actors/directors/writers I actively track — weight their filmographies heavily when suggesting): ' + followed;
   return s.slice(0, 9000);
 }
-function tierRank(t){ return ['Top 5','Top 10','Top 25','Top 50','Top 100','Outside Top 100'].indexOf(t)+1 || 9; }
 // Ratings are stored as the five text labels below (unchanged in the DB/rf_rating select --
 // that's a compact dropdown where a 1-5 star readout would be cramped/unclear). Everywhere the
 // rating is just DISPLAYED (badges, cards, search hits), we show it as stars instead: All-timer=5
@@ -784,18 +784,24 @@ function refreshCounts(){
   el('cWl').textContent = WL.length;
   el('cPeople').textContent = PEOPLE.length;
 }
+// Clicking a rating category (All-timer/Loved/Liked/Meh/Disliked) toggles it into this set --
+// that's the whole "filter by rating" UI now (no more All-ratings dropdown). Empty set = show all.
+var RATING_FILTER = {};
 function renderStats(){
-  var at = MY.filter(function(r){ return r.rating==='All-timer'; }).length;
-  var lv = MY.filter(function(r){ return r.rating==='Loved'; }).length;
-  var onShow = 0, i;
-  var ratedShow = 0;
+  var counts = {}, i;
+  ['All-timer','Loved','Liked','Meh','Disliked'].forEach(function(k){ counts[k] = 0; });
+  for(i=0;i<MY.length;i++){ if(counts[MY[i].rating] != null) counts[MY[i].rating]++; }
+  var onShow = 0, ratedShow = 0;
   for(i=0;i<RW.length;i++){ if(myFind(RW[i].title, RW[i].year)) ratedShow++; }
   for(i=0;i<MY.length;i++){ if(rwFind(MY[i].title, MY[i].year)) onShow++; }
   var pct = RW.length ? Math.round(100*ratedShow/RW.length) : 0;
   var html = '';
   html += '<div class="stat"><div class="n">' + MY.length + '</div><div class="l">Rated</div></div>';
-  html += '<div class="stat"><div class="n">' + at + '</div><div class="l">All-timers</div></div>';
-  html += '<div class="stat"><div class="n">' + lv + '</div><div class="l">Loved</div></div>';
+  ['All-timer','Loved','Liked','Meh','Disliked'].forEach(function(k){
+    var sel = RATING_FILTER[k] ? ' sel' : '';
+    html += '<div class="stat clickable' + sel + '" data-action="ratingfilter" data-rating="' + k + '" title="Click to filter">'
+      + '<div class="n">' + counts[k] + '</div><div class="l">' + esc(k) + '</div></div>';
+  });
   html += '<div class="stat"><div class="n">' + onShow + '</div><div class="l">On the show</div></div>';
   html += '<div class="stat"><div class="n">' + pct + '%</div><div class="l">Of show rated</div></div>';
   el('statsBar').innerHTML = html;
@@ -804,11 +810,11 @@ function renderStats(){
 /* ================= RENDER: RATINGS ================= */
 function renderRatings(){
   renderStats();
-  var fr = el('fRating').value, ft = el('fTier').value, srt = el('fSort').value;
-  var arr = MY.filter(function(r){ return (!fr || r.rating===fr) && (!ft || r.tier===ft); });
+  var srt = el('fSort').value;
+  var activeFilters = Object.keys(RATING_FILTER);
+  var arr = MY.filter(function(r){ return !activeFilters.length || RATING_FILTER[r.rating]; });
   if(srt==='az') arr.sort(function(a,b){ return a.title.localeCompare(b.title); });
-  else if(srt==='recent') arr.sort(function(a,b){ return (b.saved_at||'').localeCompare(a.saved_at||''); });
-  else arr.sort(function(a,b){ return tierRank(a.tier)-tierRank(b.tier) || a.title.localeCompare(b.title); });
+  else arr.sort(function(a,b){ return (b.saved_at||'').localeCompare(a.saved_at||''); });
   var html = '';
   for(var i=0;i<arr.length;i++){
     var r = arr[i];
@@ -817,7 +823,7 @@ function renderRatings(){
     html += '<div class="rcard" data-action="movie" data-ref="' + idx + '">'
       + (hasNotes ? '<span class="noteflag" title="has notes">📝</span>' : '')
       + '<div class="rt">' + esc(r.title) + '</div><div class="ry">' + esc(r.year||'') + '</div>'
-      + '<div class="rr">' + starsFor(r.rating) + (r.tier ? ' · ' + esc(r.tier) : '') + '</div></div>';
+      + '<div class="rr">' + starsFor(r.rating) + '</div></div>';
   }
   el('rGrid').innerHTML = html || '<p class="muted">No ratings match.</p>';
 }
@@ -971,7 +977,7 @@ function movieCardHTML(m){
 
   var badges = '';
   if(onRW) badges += '<span class="badge rw">🎙 On The Rewatchables' + (onRWAll.length>1 ? ' · ' + onRWAll.length + ' episodes' : '') + '</span>';
-  if(mine) badges += '<span class="badge mine">' + starsFor(mine.rating) + (mine.tier ? ' · ' + esc(mine.tier) : '') + '</span>';
+  if(mine) badges += '<span class="badge mine">' + starsFor(mine.rating) + '</span>';
   if(onWL) badges += '<span class="badge">📋 On watchlist</span>';
 
   var facts = [];
@@ -1273,10 +1279,6 @@ function ratingOpts(sel){
     var stars = new Array((RATING_STARS[o]||0)+1).join('★');
     return '<option value="' + o + '"' + (o===sel?' selected':'') + '>' + o + ' ' + stars + '</option>';
   }).join('');
-}
-function tierOpts(sel){
-  var base = '<option value=""' + (!sel?' selected':'') + '>—</option>';
-  return base + ['Top 5','Top 10','Top 25','Top 50','Top 100','Outside Top 100'].map(function(o){ return '<option' + (o===sel?' selected':'') + '>' + o + '</option>'; }).join('');
 }
 function renderRatingForm(keepVals){
   var e = FORM.existing || {};
@@ -1802,6 +1804,11 @@ document.addEventListener('click', function(ev){
     syncStandoutRecognition();
   }
   else if(action==='togglefollow'){ if(FORM){ if(FORM.follow[r.name]) delete FORM.follow[r.name]; else FORM.follow[r.name]=1; t.classList.toggle('sel'); } }
+  else if(action==='ratingfilter'){
+    var rt = t.getAttribute('data-rating');
+    if(RATING_FILTER[rt]) delete RATING_FILTER[rt]; else RATING_FILTER[rt] = 1;
+    renderRatings();
+  }
   else if(action==='wladd'){ addWatchlist(r.title, r.year, r.source); }
   else if(action==='wladdclear'){ addWatchlist(r.title, r.year, r.source); el('wlSearchOut').innerHTML=''; el('wlq').value=''; }
   else if(action==='wlremove'){ removeWatchlist(r.row); }
@@ -1830,9 +1837,7 @@ el('pq').addEventListener('keydown', function(e){ if(e.key==='Enter') peopleSear
 el('showQ').addEventListener('input', renderShow);
 el('showUnrated').addEventListener('change', renderShow);
 el('showSort').addEventListener('change', renderShow);
-el('fRating').addEventListener('change', renderRatings);
 el('peopleSort').addEventListener('change', renderPeople);
-el('fTier').addEventListener('change', renderRatings);
 el('fSort').addEventListener('change', renderRatings);
 el('setTmdb').addEventListener('change', function(){ localStorage.setItem('tmdb_key', el('setTmdb').value.trim()); toast('TMDB key saved', 'ok'); });
 document.addEventListener('click', function(e){ if(!e.target.closest('.searchrow')) hideAC(); });
