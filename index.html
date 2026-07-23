@@ -284,6 +284,9 @@ body.preauth header, body.preauth #appWrap{display:none!important}
     <div class="kv" id="sbStatus">Checking…</div>
     <label>Episode list source</label>
     <div class="kv" id="sheetStatus">Loading…</div>
+    <button class="btn btn-outline btn-sm" style="margin-top:8px" data-action="auditrw">🔍 Check episode titles against TMDB</button>
+    <p class="muted" style="font-size:11.5px;margin-top:4px">Flags episodes whose sheet title doesn't line up with TMDB's title — those can silently fail to show as "on the show" elsewhere in the app.</p>
+    <div id="rwAuditOut"></div>
     <hr class="gold">
     <h3>Backup</h3>
     <p class="muted">Ratings live in the cloud database. Export a JSON copy any time as an extra backup.</p>
@@ -404,6 +407,19 @@ function ref(obj){ REF.push(obj); return REF.length - 1; }
 /* ================= UTILS ================= */
 function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 function norm(t){ return String(t||'').toLowerCase().replace(/&/g,'and').replace(/[^a-z0-9]/g,''); }
+// The hand-maintained episode sheet doesn't always match TMDB's exact canonical title -- e.g. the
+// sheet has "Terminator" where TMDB's title is "The Terminator", and "Terminator 2" where TMDB's
+// is "Terminator 2: Judgment Day". Plain norm()===norm() comparisons silently miss these, which
+// is why some real Rewatchables episodes weren't showing as on-show anywhere in the app. Strip a
+// leading article, then also accept a clean prefix match in either direction (covers a dropped
+// subtitle) rather than requiring the two title strings to be byte-identical after normalizing.
+function stripLeadingArticle(t){ return String(t||'').replace(/^\s*(the|a|an)\s+/i, ''); }
+function titleMatch(a, b){
+  var na = norm(stripLeadingArticle(a)), nb = norm(stripLeadingArticle(b));
+  if(!na || !nb) return false;
+  if(na === nb) return true;
+  return (na.length > 3 && nb.indexOf(na) === 0) || (nb.length > 3 && na.indexOf(nb) === 0);
+}
 function baseEpisodeTitle(raw){
   // Strips revisit-episode wrapping so "Heat (\"The Re-Heat\")" / "The Re-Departed" resolve
   // back to the movie's real title ("Heat" / "The Departed") for matching purposes.
@@ -493,9 +509,9 @@ function renderAiPlanStatus(){
 function rwFindAll(title, year){
   // Returns every Rewatchables episode for a movie, original episode first, revisits
   // ("Re-"/"Three-" episodes) after — matched via baseEpisodeTitle so revisit rows aren't dead data.
-  var k = norm(title), out = [], i;
+  var out = [], i;
   for(i=0;i<RW.length;i++){
-    if(norm(baseEpisodeTitle(RW[i].title))===k && yearsMatch(RW[i].year, year)) out.push(RW[i]);
+    if(titleMatch(baseEpisodeTitle(RW[i].title), title) && yearsMatch(RW[i].year, year)) out.push(RW[i]);
   }
   out.sort(function(a,b){
     var an = parseInt(a.epNo,10), bn = parseInt(b.epNo,10);
@@ -509,13 +525,11 @@ function rwFind(title, year){
   return all.length ? all[0] : null;
 }
 function myFind(title, year){
-  var k = norm(title);
-  for(var i=0;i<MY.length;i++){ if(norm(MY[i].title)===k && yearsMatch(MY[i].year, year)) return MY[i]; }
+  for(var i=0;i<MY.length;i++){ if(titleMatch(MY[i].title, title) && yearsMatch(MY[i].year, year)) return MY[i]; }
   return null;
 }
 function wlFind(title, year){
-  var k = norm(title);
-  for(var i=0;i<WL.length;i++){ if(norm(WL[i].title)===k && yearsMatch(WL[i].year, year)) return WL[i]; }
+  for(var i=0;i<WL.length;i++){ if(titleMatch(WL[i].title, title) && yearsMatch(WL[i].year, year)) return WL[i]; }
   return null;
 }
 
@@ -763,6 +777,54 @@ function findMovie(title, year){
     var arr = res.results || [];
     if(!arr.length && year){ return tmdb('search/movie', { query: title }).then(function(r2){ return (r2.results||[])[0] || null; }); }
     return arr[0] || null;
+  });
+}
+function auditRW(){
+  var out = el('rwAuditOut');
+  if(!out) return;
+  if(!RW || !RW.length){ out.innerHTML = '<p class="muted" style="font-size:12px;margin-top:6px">Episode list hasn\'t loaded yet — try again in a moment.</p>'; return; }
+  out.innerHTML = '<p class="muted" style="font-size:12px;margin-top:6px">Checking ' + RW.length + ' episodes against TMDB… this can take a minute.</p>';
+  var rows = RW.slice();
+  var total = rows.length, done = 0, flagged = [], notFound = [];
+  var CONCURRENCY = 4, idx = 0;
+  function tick(){
+    out.innerHTML = '<p class="muted" style="font-size:12px;margin-top:6px">Checking… ' + done + ' / ' + total + '</p>';
+  }
+  function worker(){
+    if(idx >= rows.length) return Promise.resolve();
+    var f = rows[idx++];
+    var yr = f.year || null;
+    return findMovie(f.title, yr).then(function(m){
+      if(!m){ notFound.push(f); }
+      else if(!titleMatch(f.title, m.title || m.original_title || '')){
+        flagged.push({ sheet: f.title, tmdb: m.title || m.original_title, year: yr, tmdbYear: (m.release_date||'').slice(0,4) });
+      }
+    }).catch(function(){ notFound.push(f); }).then(function(){
+      done++;
+      if(done % 15 === 0 || done === total) tick();
+      return worker();
+    });
+  }
+  var workers = [];
+  for(var i=0;i<CONCURRENCY;i++) workers.push(worker());
+  Promise.all(workers).then(function(){
+    var html = '';
+    if(!flagged.length && !notFound.length){
+      html = '<p style="font-size:12px;margin-top:6px;color:var(--green)">✓ All ' + total + ' episodes matched cleanly against TMDB.</p>';
+    } else {
+      html = '<p style="font-size:12px;margin-top:6px">Checked ' + total + ' episodes. ' + flagged.length + ' title mismatch' + (flagged.length===1?'':'es') + ', ' + notFound.length + ' not found on TMDB.</p>';
+      if(flagged.length){
+        html += '<p class="muted" style="font-size:11px;margin-top:6px">Title mismatches (still matched via fuzzy logic, but worth a look):</p><ul style="font-size:12px;margin:4px 0 0 18px;padding:0">';
+        flagged.forEach(function(x){ html += '<li>"' + esc(x.sheet) + '" (' + esc(x.year||'?') + ') vs TMDB "' + esc(x.tmdb) + '" (' + esc(x.tmdbYear||'?') + ')</li>'; });
+        html += '</ul>';
+      }
+      if(notFound.length){
+        html += '<p class="muted" style="font-size:11px;margin-top:8px">No TMDB match at all (these will NOT show as "on the show" anywhere in the app):</p><ul style="font-size:12px;margin:4px 0 0 18px;padding:0">';
+        notFound.forEach(function(x){ html += '<li>"' + esc(x.title) + '" (' + esc(x.year||'?') + ')</li>'; });
+        html += '</ul>';
+      }
+    }
+    out.innerHTML = html;
   });
 }
 
@@ -1922,16 +1984,14 @@ function runSuggest(){
     if(SUG_MODE === 'beyond'){
       // The model doesn't reliably honor a long "avoid these titles" instruction buried in the
       // prompt, so cross-check deterministically against the show list rather than trusting it.
-      var onShow = {};
-      RW.forEach(function(f){ onShow[norm(f.title)] = true; });
-      arr = arr.filter(function(s){ return !onShow[norm(s.title)]; });
+      // titleMatch (not a bare norm() lookup) so a sheet title that drops "The" or a subtitle
+      // still correctly registers as on-show instead of slipping through as a "new" suggestion.
+      arr = arr.filter(function(s){ return !RW.some(function(f){ return titleMatch(f.title, s.title); }); });
       if(!arr.length) throw new Error('AI kept suggesting films already on the show — try again');
     } else if(SUG_MODE === 'general'){
       // Same reliability issue in the other direction -- All-Rewatchables must only ever return
       // films actually on the show, so cross-check against RW instead of trusting the prompt.
-      var onShowG = {};
-      RW.forEach(function(f){ onShowG[norm(f.title)] = true; });
-      arr = arr.filter(function(s){ return onShowG[norm(s.title)]; });
+      arr = arr.filter(function(s){ return RW.some(function(f){ return titleMatch(f.title, s.title); }); });
       if(!arr.length) throw new Error('AI suggested films off the Rewatchables list — try again');
     }
     var decadeSel = el('sugDecade') ? el('sugDecade').value : '';
@@ -2066,6 +2126,7 @@ document.addEventListener('click', function(ev){
   var action = t.getAttribute('data-action');
   var r = t.hasAttribute('data-ref') ? REF[Number(t.getAttribute('data-ref'))] : null;
   if(action==='tab'){ var tabName = t.getAttribute('data-tab'); if(tabName !== CURRENT_TAB) navPushTab(tabName); showTab(tabName); }
+  else if(action==='auditrw') auditRW();
   else if(action==='dosearch') doSearch();
   else if(action==='movie'){
     hideAC();
