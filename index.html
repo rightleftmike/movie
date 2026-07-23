@@ -1325,6 +1325,7 @@ function renderRatingForm(keepVals){
     + '<button class="btn btn-gold" data-action="saverating">💾 Save</button>'
     + '<button class="btn btn-outline" data-action="refine">✨ Refine notes</button>'
     + '<button class="btn" data-action="closemodal">Cancel</button>'
+    + (FORM.existing ? '<button class="btn btn-red" data-action="deleterating" style="margin-left:auto">🗑 Delete review</button>' : '')
     + '</div>';
   el('modal').innerHTML = html;
   // Baseline snapshot for the dirty check on close -- only captured once (on the very first
@@ -1379,6 +1380,23 @@ function saveRating(){
     loadCloud();
   });
   followNames.forEach(function(n){ followPerson(n, 'rated ' + d.title); });
+}
+// Ratings don't have a "blank" state -- rating is a required field with a CHECK constraint on
+// the 5 labels, so there's no such thing as "unselecting the stars" in place. The only real way
+// to reset a film back to unrated is deleting the row entirely, which is what this does.
+function deleteRating(){
+  if(!FORM || !FORM.existing) return;
+  if(!confirm('Delete your review of "' + FORM.title + '"? This removes the rating and all notes -- it goes back to unrated.')) return;
+  var row = FORM.existing;
+  MY = MY.filter(function(r){ return r.id !== row.id; });
+  stopDictation(); closeModal(); refreshCounts(); renderRatings(); renderShow();
+  toast('Deleted: ' + row.title, 'ok');
+  SUPA.from('ratings').delete().eq('id', row.id).then(function(res){
+    if(res.error) throw new Error(res.error.message);
+  }).catch(function(e){
+    toast('⚠️ Delete failed, reloading: ' + e.message, 'err');
+    loadCloud();
+  });
 }
 // Star count -> the same text labels the full rating form uses (index 0 = 1 star). Quick-rate
 // only ever writes the rating + title/year/saved_at -- no tier/notes/standout/etc. The idea is
@@ -1741,6 +1759,7 @@ document.addEventListener('click', function(ev){
     else if(r) openRatingForm({ title:r.title, year:r.year });
   }
   else if(action==='saverating') saveRating();
+  else if(action==='deleterating') deleteRating();
   else if(action==='quickrate'){
     var n = Number(ev.target.getAttribute('data-n'));
     if(n && r) quickRate(r.title, r.year, n);
