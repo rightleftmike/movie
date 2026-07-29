@@ -311,9 +311,9 @@ body.preauth header, body.preauth #appWrap{display:none!important}
     <button class="btn btn-gold" data-action="tonight">🍿 Watch Tonight</button>
   </div>
   <div class="tabs" id="tabs">
+    <div class="tab" data-action="tab" data-tab="show"><i data-lucide="clapperboard"></i> Show List <span class="count" id="cShow">0</span></div>
     <div class="tab on" data-action="tab" data-tab="ratings"><i data-lucide="star"></i> My Ratings <span class="count" id="cRatings">0</span></div>
     <div class="tab" data-action="tab" data-tab="suggest"><i data-lucide="sparkles"></i> Suggest</div>
-    <div class="tab" data-action="tab" data-tab="show"><i data-lucide="clapperboard"></i> Show List <span class="count" id="cShow">0</span></div>
     <div class="tab" data-action="tab" data-tab="watchlist"><i data-lucide="bookmark"></i> Watchlist <span class="count" id="cWl">0</span></div>
     <div class="tab" data-action="tab" data-tab="people"><i data-lucide="users"></i> Following <span class="count" id="cPeople">0</span></div>
     <div class="tab" data-action="tab" data-tab="settings"><i data-lucide="settings"></i></div>
@@ -1156,7 +1156,17 @@ function extractJSON(text){
   if(s>=0 && e>s){ try { return JSON.parse(text.slice(s, e+1)); } catch(_){} }
   return null;
 }
-function tasteProfile(){
+function tasteProfile(maxLen){
+  // Followed actors/directors/writers are a compact, high-signal block -- build it FIRST and
+  // reserve its room before the (much larger, lower-signal-per-character) ratings corpus. This
+  // used to be appended to the END of the string, then the whole thing got hard-truncated to
+  // 9000 chars (or, at some call sites, re-sliced even shorter) -- for anyone with more than
+  // ~90 rated films, the ratings text alone blew past that cap, so the followed-people block was
+  // silently cut off every single time and never reached the model at all. Now ratings get
+  // trimmed (from the least-informative, lowest-rated end, since `sorted` is already
+  // highest-rated-first) to fit whatever room remains after the followed-people block, so that
+  // block always survives regardless of how many films someone has rated.
+  maxLen = maxLen || 9000;
   var lines = [], i, r;
   var sorted = MY.slice().sort(function(a,b){ return (RATING_STARS[b.rating]||0)-(RATING_STARS[a.rating]||0); });
   for(i=0;i<sorted.length;i++){
@@ -1170,9 +1180,10 @@ function tasteProfile(){
     lines.push(l);
   }
   var followed = PEOPLE.map(function(p){ return p.name; }).join(', ');
-  var s = 'MY FILM RATINGS (scale: All-timer > Loved > Liked > Meh > Disliked):\n' + lines.join('\n');
-  if(followed) s += '\n\nPEOPLE I FOLLOW (actors/directors/writers I actively track — weight their filmographies heavily when suggesting): ' + followed;
-  return s.slice(0, 9000);
+  var followedBlock = followed ? '\n\nPEOPLE I FOLLOW (actors/directors/writers I actively track — weight their filmographies heavily when suggesting): ' + followed : '';
+  var header = 'MY FILM RATINGS (scale: All-timer > Loved > Liked > Meh > Disliked):\n';
+  var budgetForRatings = Math.max(0, maxLen - header.length - followedBlock.length);
+  return header + lines.join('\n').slice(0, budgetForRatings) + followedBlock;
 }
 // Ratings are stored as the five text labels below (unchanged in the DB/rf_rating select --
 // that's a compact dropdown where a 1-5 star readout would be cramped/unclear). Everywhere the
@@ -2799,7 +2810,7 @@ function watchTonight(){
   unrated.slice(0,30).forEach(function(f){ candidates.push(f.title + ' (' + f.year + ') [unrated Rewatchable]'); });
   if(!candidates.length){ out.innerHTML = emptyStateHTML('🍿', 'Nothing to pick from yet', 'Add a few films to your watchlist, or rate more of the show, and Watch Tonight will have something to work with.', 'Browse the Show List', 'tab', ' data-tab="show"'); return; }
   var timeDesc = now.toLocaleDateString('en-US',{weekday:'long'}) + ' ' + now.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
-  var prompt = tasteProfile().slice(0,5000)
+  var prompt = tasteProfile(5000)
     + '\n\nCANDIDATES:\n' + candidates.join('\n')
     + '\n\nIt is ' + timeDesc + '. Pick EXACTLY ONE film from the candidates for me to watch tonight. Consider typical runtime vs how late it is (' + hour + ':00 hour) and my taste. Return ONLY JSON: {"title":"…","year":1999,"reason":"one short punchy sentence","runtime_note":"e.g. ~2h — done by 11:30pm"}';
   askClaude(prompt, 400, 'watch_tonight').then(function(text){
