@@ -400,18 +400,13 @@ body.preauth header, body.preauth #appWrap{display:none!important}
       <button class="btn btn-gold btn-sm" data-action="upgrademonthly">⭐ Upgrade — $2.99/mo</button>
       <button class="btn btn-outline btn-sm" data-action="upgradeannual" style="margin-left:6px">⭐ Upgrade — $19.99/yr</button>
     </div>
-    <label>Supabase</label>
-    <div class="kv" id="sbStatus">Checking…</div>
-    <label>Episode list source</label>
-    <div class="kv" id="sheetStatus">Loading…</div>
-    <button class="btn btn-outline btn-sm" style="margin-top:8px" data-action="auditrw">🔍 Check episode titles against TMDB</button>
-    <p class="muted" style="font-size:11.5px;margin-top:4px">Flags episodes whose sheet title doesn't line up with TMDB's title — those can silently fail to show as "on the show" elsewhere in the app.</p>
-    <div id="rwAuditOut"></div>
-    <hr class="gold">
-    <label>Podcast link clicks</label>
-    <div class="kv" id="clickStats">Not checked yet.</div>
-    <button class="btn btn-outline btn-sm" style="margin-top:8px" data-action="loadclickstats">🔗 Check click counts</button>
-    <p class="muted" style="font-size:11.5px;margin-top:4px">Personal usage stats only — Spotify/Apple/Netflix don't offer any referral payout for these links.</p>
+    <!-- Supabase connection status, episode-list-source status + TMDB title audit tool, and
+         podcast-link click stats used to render here -- all internal/debugging info with no
+         action a regular user needs to take, removed from the user-facing Settings screen
+         (2026-07-29). The underlying data (sbStatus/sheetStatus elements, auditRW(),
+         loadClickStats()) still exists in the JS below, now guarded with el(id) null-checks
+         since these DOM nodes no longer exist -- easy to re-surface later (e.g. behind a
+         hidden admin view) without rebuilding any of that logic. -->
     <hr class="gold">
     <h3>Backup</h3>
     <p class="muted">Ratings live in the cloud database. Export a JSON copy any time as an extra backup.</p>
@@ -759,10 +754,10 @@ function loadCloud(){
     SUPA.from('followed_people').select('*').order('created_at', { ascending: false })
   ]).then(function(res){
     MY = sbErr(res[0]) || []; WL = sbErr(res[1]) || []; PEOPLE = sbErr(res[2]) || [];
-    el('sbStatus').innerHTML = '<span style="color:var(--green)">● Connected</span> — ' + MY.length + ' ratings, ' + WL.length + ' watchlist, ' + PEOPLE.length + ' people';
+    if(el('sbStatus')) el('sbStatus').innerHTML = '<span style="color:var(--green)">● Connected</span> — ' + MY.length + ' ratings, ' + WL.length + ' watchlist, ' + PEOPLE.length + ' people';
     refreshCounts(); renderRatings(); renderShow(); renderWatchlist(); renderPeople();
   }).catch(function(e){
-    el('sbStatus').innerHTML = '<span style="color:var(--red)">● Error</span> ' + esc(e.message);
+    if(el('sbStatus')) el('sbStatus').innerHTML = '<span style="color:var(--red)">● Error</span> ' + esc(e.message);
     toast('Could not load from cloud: ' + e.message, 'err');
   });
 }
@@ -931,7 +926,7 @@ function loadSheet(){
     if(out.length < 50) throw new Error('too few rows parsed');
     RW = out; sheetLive = true;
     try{localStorage.setItem('rw_cache',JSON.stringify(out));}catch(_){}
-    el('sheetStatus').innerHTML = '<span style="color:var(--green)">● Live from Google Sheet</span> — ' + RW.length + ' films';
+    if(el('sheetStatus')) el('sheetStatus').innerHTML = '<span style="color:var(--green)">● Live from Google Sheet</span> — ' + RW.length + ' films';
     populateGuestFilter();
     refreshCounts(); renderShow(); renderRatings();
     markRWReady();
@@ -942,14 +937,14 @@ function loadSheet(){
     fetch('rw.json').then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); }).then(function(arr){
       applySnapshot(arr.map(function(r){ return { title:r.title, year:r.year, director:r.director||'', genres:'' }; }), 'bundled snapshot', e);
     }).catch(function(e2){
-      el('sheetStatus').innerHTML = '<span style="color:var(--red)">● Sheet fetch failed</span> (' + esc(e.message) + '); snapshot also failed (' + esc(e2.message) + ')';
+      if(el('sheetStatus')) el('sheetStatus').innerHTML = '<span style="color:var(--red)">● Sheet fetch failed</span> (' + esc(e.message) + '); snapshot also failed (' + esc(e2.message) + ')';
       toast('Episode list unavailable: ' + e.message, 'err');
     });
   });
 }
 function applySnapshot(arr, label, e){
   RW = arr;
-  el('sheetStatus').innerHTML = '<span style="color:var(--red)">● Sheet fetch failed</span> (' + esc(e.message) + ') — using ' + label + ' of ' + RW.length + ' films';
+  if(el('sheetStatus')) el('sheetStatus').innerHTML = '<span style="color:var(--red)">● Sheet fetch failed</span> (' + esc(e.message) + ') — using ' + label + ' of ' + RW.length + ' films';
   toast('Episode list: using ' + label + ' (' + e.message + ')', 'err');
   populateGuestFilter();
   refreshCounts(); renderShow(); renderRatings();
