@@ -13,7 +13,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:ital,wght@0,400;0,500;0,700;1,400&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
-:root{--bg:#0b0a08;--panel:#14120e;--panel2:#1b1812;--line:#2a2416;--gold:#c9a84c;--gold-dim:#8a7434;--txt:#e8e2d2;--dim:#9a8f74;--red:#c05b4d;--green:#7da05e}
+:root{--bg:#0b0a08;--panel:#14120e;--panel2:#1b1812;--line:#2a2416;--gold:#c9a84c;--gold-dim:#8a7434;--txt:#e8e2d2;--dim:#9a8f74;--red:#c05b4d;--green:#7da05e;--tier-alltimer:#f0ce6e;--tier-loved:#e0993f;--tier-liked:#8fb0a6;--tier-meh:#8b8375;--tier-disliked:#b06a5a}
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 html{background:var(--bg)}
 body{background:var(--bg);color:var(--txt);font-family:'DM Sans',sans-serif;font-size:15px;line-height:1.45;padding-bottom:60px}
@@ -99,6 +99,9 @@ label{font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:.0
 .controls select{width:auto;padding:7px 10px;font-size:13px}
 .rgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:9px}
 .rcard{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:11px 12px}
+.rcard{display:flex;gap:10px;align-items:flex-start}
+.rcard .poster-thumb{width:46px;height:69px;object-fit:cover;border-radius:6px;flex:none;background:var(--panel2)}
+.rcard .rcard-body{flex:1;min-width:0}
 .rcard:hover{border-color:var(--gold-dim)}
 .rcard-main{cursor:pointer}
 .rcard-main:hover .rt{text-decoration:underline}
@@ -106,6 +109,11 @@ label{font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:.0
 .rcard .ry{color:var(--dim);font-size:12px}
 .rcard .rr{margin-top:6px;font-size:12px;color:var(--gold)}
 .rcard .rr:hover{text-decoration:underline;color:#e0c574}
+.rcard .rr[data-tier="All-timer"]{color:var(--tier-alltimer);font-weight:700}
+.rcard .rr[data-tier="Loved"]{color:var(--tier-loved)}
+.rcard .rr[data-tier="Liked"]{color:var(--tier-liked)}
+.rcard .rr[data-tier="Meh"]{color:var(--tier-meh)}
+.rcard .rr[data-tier="Disliked"]{color:var(--tier-disliked)}
 .rcard .noteflag{float:right;font-size:13px;color:var(--gold)}
 .rcard .noteflag:hover{color:#e0c574}
 .rowlist{display:flex;flex-direction:column;gap:6px}
@@ -200,6 +208,9 @@ body.preauth header, body.preauth #appWrap{display:none!important}
 .auth-sep{color:var(--dim);font-size:11px;letter-spacing:.14em;text-transform:uppercase;margin:16px 0 4px}
 .auth-msg{font-size:13px;margin-top:14px;min-height:18px}
 .auth-foot{color:var(--dim);font-size:11px;margin-top:18px;line-height:1.5}
+[data-lucide]{width:1em;height:1em;stroke-width:1.75;vertical-align:-0.125em}
+.tab.on [data-lucide]{color:#171307}
+.tab [data-lucide]{color:var(--gold)}
 </style>
 </head>
 <body class="preauth">
@@ -214,12 +225,12 @@ body.preauth header, body.preauth #appWrap{display:none!important}
     <button class="btn btn-gold" data-action="tonight">🍿 Watch Tonight</button>
   </div>
   <div class="tabs" id="tabs">
-    <div class="tab on" data-action="tab" data-tab="ratings">⭐ My Ratings <span class="count" id="cRatings">0</span></div>
-    <div class="tab" data-action="tab" data-tab="suggest">✨ Suggest</div>
-    <div class="tab" data-action="tab" data-tab="show">🎬 Show List <span class="count" id="cShow">0</span></div>
-    <div class="tab" data-action="tab" data-tab="watchlist">📋 Watchlist <span class="count" id="cWl">0</span></div>
-    <div class="tab" data-action="tab" data-tab="people">👤 Following <span class="count" id="cPeople">0</span></div>
-    <div class="tab" data-action="tab" data-tab="settings">⚙️</div>
+    <div class="tab on" data-action="tab" data-tab="ratings"><i data-lucide="star"></i> My Ratings <span class="count" id="cRatings">0</span></div>
+    <div class="tab" data-action="tab" data-tab="suggest"><i data-lucide="sparkles"></i> Suggest</div>
+    <div class="tab" data-action="tab" data-tab="show"><i data-lucide="clapperboard"></i> Show List <span class="count" id="cShow">0</span></div>
+    <div class="tab" data-action="tab" data-tab="watchlist"><i data-lucide="bookmark"></i> Watchlist <span class="count" id="cWl">0</span></div>
+    <div class="tab" data-action="tab" data-tab="people"><i data-lucide="users"></i> Following <span class="count" id="cPeople">0</span></div>
+    <div class="tab" data-action="tab" data-tab="settings"><i data-lucide="settings"></i></div>
   </div>
 </div></header>
 
@@ -1001,14 +1012,42 @@ function renderRatings(){
     // Two separate click targets, same pattern as the Show List row: the title/year area opens
     // the full movie detail card, the star line (and the pencil, when there's a written review)
     // opens the rating form to view/edit the review.
+    var posterKey = norm(r.title) + '|' + (r.year || '');
     html += '<div class="rcard">'
+      + '<img class="poster-thumb" id="rp-' + i + '" data-poster-key="' + esc(posterKey) + '">'
+      + '<div class="rcard-body">'
       + (hasNotes ? '<span class="noteflag" style="cursor:pointer" data-action="rate" data-ref="' + ridx + '" title="Review written — click to view">✎</span>' : '')
       + '<div class="rcard-main" data-action="movie" data-ref="' + idx + '">'
       + '<div class="rt">' + esc(r.title) + '</div><div class="ry">' + esc(r.year||'') + '</div></div>'
-      + '<div class="rr" style="cursor:pointer" data-action="rate" data-ref="' + ridx + '" title="View / edit review">' + starsFor(r.rating) + '</div>'
-      + '</div>';
+      + '<div class="rr" data-tier="' + esc(r.rating) + '" style="cursor:pointer" data-action="rate" data-ref="' + ridx + '" title="View / edit review">' + starsFor(r.rating) + '</div>'
+      + '</div></div>';
   }
   el('rGrid').innerHTML = html || '<p class="muted">No ratings match.</p>';
+  resolveRatingPosters(arr);
+}
+
+var posterCache = {};
+function resolveRatingPosters(rows){
+  var CONCURRENCY = 4, idx2 = 0;
+  function worker(){
+    if(idx2 >= rows.length) return Promise.resolve();
+    var i = idx2++, r = rows[i];
+    var key = norm(r.title) + '|' + (r.year || '');
+    var img = el('rp-' + i);
+    if(!img) return worker();
+    if(posterCache[key] !== undefined){
+      if(posterCache[key]) img.src = IMG + 'w185' + posterCache[key];
+      return worker();
+    }
+    return findMovie(r.title, r.year).then(function(hit){
+      var path = (hit && hit.poster_path) || null;
+      posterCache[key] = path;
+      if(path && el('rp-' + i)) el('rp-' + i).src = IMG + 'w185' + path;
+    }).catch(function(){ posterCache[key] = null; }).then(worker);
+  }
+  var workers = [];
+  for(var w=0; w<CONCURRENCY; w++) workers.push(worker());
+  return Promise.all(workers);
 }
 
 // Shared star-badge markup used anywhere a film title needs a rate/quick-rate control: Show List
@@ -2500,5 +2539,7 @@ el('setTmdb').value = tmdbKey();
 // Data loading now happens inside enterApp(), after the user is authenticated.
 initAuth();
 </script>
+<script src="https://unpkg.com/lucide@latest"></script>
+<script>lucide.createIcons();</script>
 </body>
 </html>
