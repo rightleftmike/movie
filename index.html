@@ -2085,7 +2085,12 @@ function refineNotes(){
   var any = Object.keys(fields).some(function(k){ return fields[k]; });
   if(!any){ toast('Write some rough notes first', 'err'); return; }
   el('refineBox').innerHTML = '<p class="muted" style="margin-top:10px"><span class="spin"></span> Refining…</p>';
-  var prompt = 'Polish these rough personal film-review notes about "' + FORM.title + '". Keep my voice, first person, casual but sharper and clearer. Do not invent details I did not write. Keep each field concise. Return ONLY JSON with the same keys, null for empty ones: ' + JSON.stringify(fields);
+  // Worded directively on purpose: an earlier softer phrasing ("polish...keep my voice...do not
+  // invent details") led Gemini to just echo the input back almost verbatim, especially with
+  // thinkingBudget disabled for cost control -- it read "don't invent" as "don't change much."
+  // Explicitly telling it to fix grammar/punctuation/run-ons AND forbidding a no-op response
+  // fixes that while still keeping it from adding new opinions or details.
+  var prompt = 'Rewrite these rough, casually-typed personal film-review notes about "' + FORM.title + '" into clean, grammatically correct sentences -- fix punctuation, capitalization, and run-on phrasing. Keep the same casual first-person tone and do not add any new opinions or details beyond what is written, but you MUST actually rewrite the sentence structure for clarity -- do not just return the input unchanged. Keep each field concise. Return ONLY JSON with the same keys, null for empty ones: ' + JSON.stringify(fields);
   askClaude(prompt, 900, 'refine').then(function(text){
     var out = extractJSON(text);
     if(!out) throw new Error('Could not parse refinement');
