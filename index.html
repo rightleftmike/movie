@@ -187,6 +187,31 @@ label{font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:.0
 .sugbadge .quickrate{align-items:flex-start}
 .suggestion .st{font-family:'Bebas Neue';font-size:21px;color:var(--gold)}
 .tonight-card{background:linear-gradient(145deg,#1b1710,#14120e);border:1px solid var(--gold);border-radius:14px;padding:18px;margin-top:14px}
+.tonight-top{display:flex;gap:16px}
+.tonight-poster{flex:0 0 96px;width:96px;height:144px;border-radius:8px;background:var(--panel2);overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,.4)}
+.tonight-poster img{width:100%;height:100%;object-fit:cover;display:block}
+.tonight-main{flex:1;min-width:0}
+/* Shared empty-state block: icon + headline + short subtext + optional single CTA. */
+.empty-state{text-align:center;padding:34px 16px}
+.empty-state .ei{font-size:32px;margin-bottom:8px;opacity:.9}
+.empty-state .eh{font-family:'Bebas Neue',sans-serif;font-size:19px;letter-spacing:.02em;color:var(--gold)}
+.empty-state .es{font-size:13px;line-height:1.55;color:var(--dim);max-width:360px;margin:6px auto 0}
+/* AI "thinking" loading treatment: pulsing icon + cycling status line, used by every AI call
+   (Suggest, Watch Tonight, Refine) instead of a bare spinner + static sentence. */
+.ai-thinking{display:flex;flex-direction:column;align-items:center;gap:8px;padding:28px 12px;text-align:center}
+.ai-thinking-icon{font-size:26px;animation:aithink 1.4s ease-in-out infinite}
+@keyframes aithink{0%,100%{transform:scale(1);opacity:.6}50%{transform:scale(1.18);opacity:1}}
+.ai-thinking-text{color:var(--gold-dim);font-size:13px;min-height:17px}
+/* Pre-paywall view: shown when an AI call comes back "upgrade required" -- a single clear CTA
+   (annual anchored) over a softly blurred preview of what a real result looks like, rather than
+   a bare error message. */
+.paywall-card{position:relative;margin-top:12px;border:1px solid var(--gold-dim);border-radius:14px;overflow:hidden;background:var(--panel)}
+.paywall-preview{padding:14px;filter:blur(5px);opacity:.55;pointer-events:none;user-select:none}
+.paywall-preview .suggestion{margin-top:8px}
+.paywall-overlay{position:relative;margin:-54px 14px 14px;padding:16px;text-align:center;background:linear-gradient(145deg,#1b1710,#14120e);border:1px solid var(--gold);border-radius:12px}
+.paywall-icon{font-size:26px}
+.paywall-head{font-family:'Bebas Neue',sans-serif;font-size:19px;color:var(--gold);margin-top:2px}
+.paywall-sub{font-size:12.5px;color:var(--dim);line-height:1.5;margin:6px auto 0;max-width:320px}
 .seg{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}
 .seg .chip.sel{font-weight:700}
 .kv{font-size:13px;margin:8px 0;color:var(--dim)}
@@ -288,7 +313,7 @@ body.preauth header, body.preauth #appWrap{display:none!important}
       <select id="sugLength"><option value="">Any length</option><option value="short">Under 90 min</option><option value="mid">90–120 min</option><option value="long">Over 120 min</option></select>
     </div>
     <button class="btn btn-gold" data-action="suggest" style="margin-top:10px">✨ Get suggestions</button>
-    <div id="sugOut"></div>
+    <div id="sugOut"><div class="empty-state"><div class="ei">✨</div><div class="eh">Pick a mode above, then tap Get suggestions</div><div class="es">Suggestions are tailored to your ratings and notes -- the more you rate, the better they get.</div></div></div>
   </div>
 
   <div class="panel" id="p-show">
@@ -567,20 +592,60 @@ function parseCSV(text){
   return rows;
 }
 function tmdbKey(){ return localStorage.getItem('tmdb_key') || TMDB_DEFAULT; }
+// Shared empty-state block -- icon + headline + short subtext + an optional single CTA button --
+// used anywhere a list/grid has nothing to show instead of one line of muted text.
+function emptyStateHTML(icon, headline, sub, ctaLabel, ctaAction, ctaExtra){
+  var cta = ctaLabel ? '<button class="btn btn-gold btn-sm" style="margin-top:12px" data-action="' + ctaAction + '"' + (ctaExtra||'') + '>' + esc(ctaLabel) + '</button>' : '';
+  return '<div class="empty-state"><div class="ei">' + icon + '</div>'
+    + '<div class="eh">' + esc(headline) + '</div>'
+    + (sub ? '<div class="es">' + esc(sub) + '</div>' : '')
+    + cta + '</div>';
+}
+// AI "thinking" loading treatment shared by Suggest, Watch Tonight, and Refine -- a pulsing icon
+// plus a short rotating status line instead of a bare spinner + one static sentence. Self-cleans:
+// the interval checks whether its own element is still in the DOM each tick and stops once the
+// caller has replaced it with real content or an error, so nothing needs to explicitly cancel it.
+var AI_THINKING_MSGS = {
+  suggest: ['Reading your ratings…','Weighing your taste profile…','Cross-checking the list…','Picking films you’ll love…'],
+  watch_tonight: ['Checking the time…','Scanning your watchlist…','Weighing runtime vs. the hour…','Picking tonight’s film…'],
+  refine: ['Reading your rough notes…','Tightening the phrasing…','Polishing your voice…']
+};
+function aiThinkingHTML(kind){
+  var id = 'think' + Math.random().toString(36).slice(2);
+  var msgs = AI_THINKING_MSGS[kind] || ['Thinking…'];
+  setTimeout(function(){
+    var i = 0;
+    var iv = setInterval(function(){
+      var box = document.getElementById(id);
+      if(!box){ clearInterval(iv); return; }
+      i = (i+1) % msgs.length;
+      box.textContent = msgs[i];
+    }, 1100);
+  }, 0);
+  return '<div class="ai-thinking"><div class="ai-thinking-icon">✨</div><div class="ai-thinking-text" id="' + id + '">' + esc(msgs[0]) + '</div></div>';
+}
 function aiErrorHTML(e){
-  var html = '<p style="color:var(--red);margin-top:10px">⚠️ ' + esc(e.message) + '</p>';
   if(e.upgradeRequired){
     track('paywall_viewed', { trigger: 'ai_limit' });
-    // Trial-ended is the one AI error worth pitching, not just apologizing for -- show what
-    // upgrading actually gets them instead of a bare error + buttons.
-    html += '<div class="card" style="margin-top:8px;padding:12px">'
-      + '<div style="font-weight:600;margin-bottom:4px">⭐ What upgrading unlocks</div>'
-      + '<div class="muted" style="font-size:12.5px;line-height:1.55;margin-bottom:10px">A much higher daily AI limit (100/day vs 20/day on the trial), ✨ <b>Suggest</b> — picks tailored to your actual ratings and notes, ✎ <b>Refine notes</b> — AI-polished versions of your rough thoughts, and 🍿 <b>Watch Tonight</b> — one pick, weighed for the time and day.</div>'
-      + '<div style="display:flex;gap:8px;flex-wrap:wrap">'
-      + '<button class="btn btn-gold btn-sm" data-action="upgrademonthly">⭐ $2.99/mo</button>'
-      + '<button class="btn btn-outline btn-sm" data-action="upgradeannual">⭐ $19.99/yr</button></div></div>';
+    // This is the actual conversion moment (trial ended / daily cap hit), so it gets a real
+    // "pre-paywall" treatment instead of a bare error line: a softly blurred preview of what a
+    // real suggestion result looks like, with one clear primary CTA (annual, anchored per the
+    // pricing plan) over it, and monthly as a small secondary option underneath rather than a
+    // second equally-weighted button.
+    return '<div class="paywall-card">'
+      + '<div class="paywall-preview">'
+      + '<div class="suggestion"><div class="st">A film picked for you</div><p style="font-size:13.5px;margin:6px 0">Tailored to your ratings and notes…</p></div>'
+      + '<div class="suggestion"><div class="st">Another great match</div><p style="font-size:13.5px;margin:6px 0">Weighed against what you’ve rated highly…</p></div>'
+      + '</div>'
+      + '<div class="paywall-overlay">'
+      + '<div class="paywall-icon">⭐</div>'
+      + '<div class="paywall-head">' + esc(e.message) + '</div>'
+      + '<div class="paywall-sub">Upgrade for a much higher daily AI limit, tailored Suggest picks, note polishing, and a nightly Watch Tonight pick.</div>'
+      + '<button class="btn btn-gold" style="margin-top:12px;width:100%;max-width:280px" data-action="upgradeannual">⭐ Upgrade — $19.99/yr</button>'
+      + '<div style="margin-top:8px"><button class="btn" style="background:transparent;border:none;font-size:12px;color:var(--gold-dim);text-decoration:underline;padding:0" data-action="upgrademonthly">or $2.99/mo</button></div>'
+      + '</div></div>';
   }
-  return html;
+  return '<p style="color:var(--red);margin-top:10px">⚠️ ' + esc(e.message) + '</p>';
 }
 function openUpgrade(url){
   if(!url){ toast('Upgrade link not set up yet — check back soon', 'err'); return; }
@@ -1145,7 +1210,9 @@ function renderRatings(){
       + '<div class="rr" data-tier="' + esc(r.rating) + '" style="cursor:pointer" data-action="rate" data-ref="' + ridx + '" title="View / edit review">' + esc(r.rating) + '<span class="stars-line">' + new Array((RATING_STARS[r.rating]||0)+1).join('★') + '</span></div>'
       + '</div></div>';
   }
-  el('rGrid').innerHTML = html || '<p class="muted">No ratings match.</p>';
+  el('rGrid').innerHTML = html || (activeFilters.length
+    ? emptyStateHTML('☆', 'No ratings match this filter', 'Try a different rating, or clear the filter to see everything.', 'Clear filters', 'clearratingfilter')
+    : emptyStateHTML('☆', 'No ratings yet', 'Rate a few films from the Show List to start building your taste profile -- Suggest and Watch Tonight both get better the more you rate.', 'Browse the Show List', 'tab', ' data-tab="show"'));
   resolveRatingPosters(arr);
 }
 
@@ -1216,7 +1283,7 @@ function renderShow(){
       + badge + '</div>';
   }
   el('showCounts').textContent = '· ' + rated + ' rated / ' + (RW.length - rated) + ' unrated';
-  el('showList').innerHTML = html || '<p class="muted">Nothing matches.</p>';
+  el('showList').innerHTML = html || emptyStateHTML('🔍', 'Nothing matches', 'Try a different search term, or clear the guest filter and "unrated only" checkbox.', '', '');
 }
 
 /* ================= RENDER: WATCHLIST ================= */
@@ -1233,7 +1300,7 @@ function renderWatchlist(){
       + '<button class="btn btn-outline btn-sm" data-action="watched" data-ref="' + widx + '">✓ Watched</button>'
       + '<button class="btn btn-red btn-sm" data-action="wlremove" data-ref="' + didx + '">✕</button></div>';
   }
-  el('wlList').innerHTML = html || '<p class="muted">Watchlist is empty. Add films above, from any movie card, or from a person’s filmography.</p>';
+  el('wlList').innerHTML = html || emptyStateHTML('🔖', 'Your watchlist is empty', 'Add films from the search above, any movie card, or a person’s filmography -- Watch Tonight also pulls from here first.', 'Browse the Show List', 'tab', ' data-tab="show"');
 }
 
 /* ================= RENDER: PEOPLE ================= */
@@ -1273,7 +1340,7 @@ function renderPeopleGrid(arr){
         + '<button class="btn btn-red btn-sm" style="margin-top:7px" data-action="unfollow" data-ref="' + uidx + '">Unfollow</button></div>';
     })(arr[i]);
   }
-  el('peopleGrid').innerHTML = html || '<p class="muted">Not following anyone yet.</p>';
+  el('peopleGrid').innerHTML = html || emptyStateHTML('🎭', 'Not following anyone yet', 'Follow actors, directors, and writers above to track their filmographies and see them highlighted on every movie card.', '', '');
   mapLimit(arr, 5, function(p){ return Promise.all([loadPersonThumb(p), loadPersonOnShowBadge(p)]); });
 }
 // Rewatchables-appearance count per followed person -- cached across renders/tab switches so
@@ -2084,7 +2151,7 @@ function refineNotes(){
   var fields = { vibe:d.vibe, fav_actor:d.fav_actor, didnt_click:d.didnt_click, notes:d.notes };
   var any = Object.keys(fields).some(function(k){ return fields[k]; });
   if(!any){ toast('Write some rough notes first', 'err'); return; }
-  el('refineBox').innerHTML = '<p class="muted" style="margin-top:10px"><span class="spin"></span> Refining…</p>';
+  el('refineBox').innerHTML = aiThinkingHTML('refine');
   // Worded directively on purpose: an earlier softer phrasing ("polish...keep my voice...do not
   // invent details") led Gemini to just echo the input back almost verbatim, especially with
   // thinkingBudget disabled for cost control -- it read "don't invent" as "don't change much."
@@ -2321,7 +2388,7 @@ function runSuggest(){
     filter_decade: el('sugDecade') ? el('sugDecade').value : '',
     filter_length: el('sugLength') ? el('sugLength').value : ''
   });
-  out.innerHTML = '<p class="muted" style="margin-top:14px"><span class="spin"></span> Building taste profile & asking the AI…</p>';
+  out.innerHTML = aiThinkingHTML('suggest');
   var profile = tasteProfile();
   var prompt = '';
   if(SUG_MODE === 'show'){
@@ -2388,7 +2455,7 @@ function runSuggest(){
 function watchTonight(){
   showTab('suggest');
   var out = el('sugOut');
-  out.innerHTML = '<p class="muted" style="margin-top:14px"><span class="spin"></span> Picking one film for tonight…</p>';
+  out.innerHTML = aiThinkingHTML('watch_tonight');
   var now = new Date();
   var hour = now.getHours();
   var candidates = [];
@@ -2396,7 +2463,7 @@ function watchTonight(){
   var unrated = RW.filter(function(f){ return !myFind(f.title, f.year); });
   for(var i=unrated.length-1;i>0;i--){ var j=Math.floor(Math.random()*(i+1)); var t=unrated[i]; unrated[i]=unrated[j]; unrated[j]=t; }
   unrated.slice(0,30).forEach(function(f){ candidates.push(f.title + ' (' + f.year + ') [unrated Rewatchable]'); });
-  if(!candidates.length){ out.innerHTML = '<p class="muted" style="margin-top:14px">Nothing to pick from — add films to your watchlist.</p>'; return; }
+  if(!candidates.length){ out.innerHTML = emptyStateHTML('🍿', 'Nothing to pick from yet', 'Add a few films to your watchlist, or rate more of the show, and Watch Tonight will have something to work with.', 'Browse the Show List', 'tab', ' data-tab="show"'); return; }
   var timeDesc = now.toLocaleDateString('en-US',{weekday:'long'}) + ' ' + now.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
   var prompt = tasteProfile().slice(0,5000)
     + '\n\nCANDIDATES:\n' + candidates.join('\n')
@@ -2415,12 +2482,28 @@ function watchTonight(){
 function renderTonight(pick){
   var midx = ref({ type:'movie', title:pick.title, year:pick.year });
   LAST_SUGGESTIONS = [{ title:pick.title, year:pick.year }];
-  el('sugOut').innerHTML = '<div class="tonight-card"><div class="muted" style="letter-spacing:.2em;text-transform:uppercase;font-size:11px">Tonight’s pick</div>'
-    + '<h2 style="font-size:34px;margin:4px 0">' + esc(pick.title) + ' <span class="muted" style="font-size:16px;font-family:DM Sans">(' + esc(pick.year||'?') + ')</span></h2>'
+  el('sugOut').innerHTML = '<div class="tonight-card"><div class="tonight-top">'
+    + '<div class="tonight-poster" id="tonightPoster"></div>'
+    + '<div class="tonight-main">'
+    + '<div class="muted" style="letter-spacing:.2em;text-transform:uppercase;font-size:11px">🍿 Tonight’s pick</div>'
+    + '<h2 style="font-size:30px;margin:4px 0;line-height:1.05">' + esc(pick.title) + ' <span class="muted" style="font-size:16px;font-family:DM Sans">(' + esc(pick.year||'?') + ')</span></h2>'
     + '<div class="sugbadge" id="sugbadge-0">' + ratingBadgeHTML(pick.title, pick.year) + '</div>'
     + '<p style="font-size:14.5px">' + esc(pick.reason||'') + '</p>'
     + (pick.runtime_note ? '<p class="muted" style="font-size:12.5px;margin-top:4px">⏱ ' + esc(pick.runtime_note) + '</p>' : '')
-    + '<div style="margin-top:12px"><button class="btn btn-gold" data-action="movie" data-ref="' + midx + '">View film</button></div></div>';
+    + '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">'
+    + '<button class="btn btn-gold" data-action="movie" data-ref="' + midx + '">View film</button>'
+    + '<span id="tonightwl">' + watchlistToggleHTML(pick.title, pick.year, 'watch tonight') + '</span>'
+    + '<button class="btn btn-outline" data-action="tonight">🎲 Pick something else</button>'
+    + '</div></div></div></div>';
+  loadTonightPoster(pick.title, pick.year);
+}
+// Best-effort poster art for the Watch Tonight hero -- a plain empty div if the lookup fails or
+// the film has no poster, same graceful-degrade pattern used everywhere else art is optional.
+function loadTonightPoster(title, year){
+  findMovie(title, year).then(function(hit){
+    var box = el('tonightPoster');
+    if(box && hit && hit.poster_path) box.innerHTML = '<img src="' + IMG + 'w342' + hit.poster_path + '">';
+  }).catch(function(){});
 }
 
 /* ================= WATCHLIST + PEOPLE SEARCH ================= */
@@ -2507,6 +2590,7 @@ document.addEventListener('click', function(ev){
     if(r && r.type==='personById') openPersonById(r.id, r.name);
     else if(r) openPersonByName(r.name);
   }
+  else if(action==='clearratingfilter'){ RATING_FILTER = {}; renderRatings(); }
   else if(action==='closedrawer') closeDrawer();
   else if(action==='closemodal') attemptCloseModal();
   else if(action==='ageinfo'){ if(r) showAgeInfo(r.id, r.name, r.movieYear); }
