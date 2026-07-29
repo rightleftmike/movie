@@ -817,6 +817,7 @@ function loadSheet(){
     el('sheetStatus').innerHTML = '<span style="color:var(--green)">● Live from Google Sheet</span> — ' + RW.length + ' films';
     populateGuestFilter();
     refreshCounts(); renderShow(); renderRatings();
+    markRWReady();
   }).catch(function(e){
     sheetLive = false;
     var cached=null; try{cached=JSON.parse(localStorage.getItem('rw_cache')||'null');}catch(_){}
@@ -835,7 +836,36 @@ function applySnapshot(arr, label, e){
   toast('Episode list: using ' + label + ' (' + e.message + ')', 'err');
   populateGuestFilter();
   refreshCounts(); renderShow(); renderRatings();
+  markRWReady();
 }
+// Followed-person Rewatchables-appearance badges (getOnShowCount, below) need RW -- the episode
+// list -- to actually be populated to mean anything. RW starts as [] and is filled in later by
+// loadSheet()'s fetch (live Google Sheet, or a cached/bundled fallback). Computing appearance
+// counts against an empty RW isn't an error -- every rwFind() call just legitimately returns no
+// match -- so it silently produces a "correct-looking" 0 for every single person, which then gets
+// cached as a permanent wrong answer for the rest of the session. This is the actual cause of
+// appearance badges sometimes showing 0 for people who are clearly on the show: whoever opens the
+// Following tab before the episode list finishes loading gets stuck with bad zeros. Everything
+// downstream now waits for RW to genuinely be ready before trusting a count.
+var RW_READY = false;
+var _rwReadyWaiters = [];
+function waitForRW(){
+  if(RW_READY) return Promise.resolve();
+  return new Promise(function(res){ _rwReadyWaiters.push(res); });
+}
+function markRWReady(){
+  RW_READY = true;
+  _rwReadyWaiters.forEach(function(res){ res(); });
+  _rwReadyWaiters = [];
+  // Anything cached before this point (e.g. a quick tab-switch that raced the episode-list fetch)
+  // was computed against an empty RW and is wrong -- clear it so those people get a real answer.
+  ONSHOW_CACHE = {};
+  if(CURRENT_TAB === 'people') renderPeople();
+}
+// Safety valve: if the live sheet AND every fallback somehow all fail (RW.json ships bundled with
+// the app, so this should be extremely rare), don't leave Following-tab badges spinning forever --
+// release waiters after a timeout so the UI settles, even if that means an honest all-zero state.
+setTimeout(function(){ if(!RW_READY) markRWReady(); }, 8000);
 // Builds the "All hosts/guests" dropdown from whatever names actually show up in the loaded
 // episode data (host + up to 4 guests per episode) -- alphabetical (so the browser's native
 // type-a-letter-to-jump still works), with an episode count next to each name so the frequent
@@ -1238,24 +1268,26 @@ var ONSHOW_CACHE = {};
 function getOnShowCount(name){
   var key = name.toLowerCase();
   if(ONSHOW_CACHE[key] != null) return Promise.resolve(ONSHOW_CACHE[key]);
-  return tmdbSearchPerson(name).then(function(hit){
-    if(!hit){ ONSHOW_CACHE[key] = 0; return 0; }
-    return tmdbPerson(hit.id).then(function(p){
-      var cc = p.combined_credits || {}, seen = {}, count = 0;
-      (cc.cast||[]).forEach(function(c){
-        if(c.media_type==='movie' && !seen[c.id]){
-          var y = (c.release_date||'').slice(0,4);
-          if(rwFind(c.title, y)){ seen[c.id]=1; count++; }
-        }
+  return waitForRW().then(function(){
+    return tmdbSearchPerson(name).then(function(hit){
+      if(!hit){ ONSHOW_CACHE[key] = 0; return 0; }
+      return tmdbPerson(hit.id).then(function(p){
+        var cc = p.combined_credits || {}, seen = {}, count = 0;
+        (cc.cast||[]).forEach(function(c){
+          if(c.media_type==='movie' && !seen[c.id]){
+            var y = (c.release_date||'').slice(0,4);
+            if(rwFind(c.title, y)){ seen[c.id]=1; count++; }
+          }
+        });
+        (cc.crew||[]).forEach(function(c){
+          if(c.media_type==='movie' && !seen[c.id] && ['Director','Screenplay','Writer','Director of Photography'].indexOf(c.job)>=0){
+            var y2 = (c.release_date||'').slice(0,4);
+            if(rwFind(c.title, y2)){ seen[c.id]=1; count++; }
+          }
+        });
+        ONSHOW_CACHE[key] = count;
+        return count;
       });
-      (cc.crew||[]).forEach(function(c){
-        if(c.media_type==='movie' && !seen[c.id] && ['Director','Screenplay','Writer','Director of Photography'].indexOf(c.job)>=0){
-          var y2 = (c.release_date||'').slice(0,4);
-          if(rwFind(c.title, y2)){ seen[c.id]=1; count++; }
-        }
-      });
-      ONSHOW_CACHE[key] = count;
-      return count;
     });
   }).catch(function(){
     // A genuine fetch failure (rate limit exhausted its retries, network hiccup, etc) -- do NOT
