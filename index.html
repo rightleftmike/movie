@@ -214,6 +214,30 @@ body.preauth header, body.preauth #appWrap{display:none!important}
 .tab.on [data-lucide]{color:#171307}
 .tab [data-lucide]{color:var(--gold)}
 </style>
+<script>
+  !function(t,e){var o,n,p,r;e.__SV||(window.posthog=e,e._i=[],e.init=function(i,s,a){
+  function g(t,e){var o=e.split(".");2==o.length&&(t=t[o[0]],e=o[1]),t[e]=function(){
+  t.push([e].concat(Array.prototype.slice.call(arguments,0)))}}(p=t.createElement("script")).type="text/javascript",
+  p.async=!0,p.src=s.api_host.replace(".i.posthog.com","-assets.i.posthog.com")+"/static/array.js",
+  (r=t.getElementsByTagName("script")[0]).parentNode.insertBefore(p,r);var u=e;for(void 0!==a?u=e[a]=[]:a="posthog",
+  u.people=u.people||[],u.toString=function(t){var e="posthog";return"posthog"!==a&&(e+="."+a),t||(e+=" (stub)"),e},
+  u.people.toString=function(){return u.toString(1)+".people (stub)"},o="init capture register register_once unregister opt_in_capturing opt_out_capturing has_opted_in_capturing has_opted_out_capturing identify reset group setPersonProperties".split(" "),
+  n=0;n<o.length;n++)g(u,o[n]);e._i.push([i,s,a])},e.__SV=1)}(document,window.posthog||[]);
+  function initAnalytics(){
+    posthog.init('phc_B8xGHEhBDVZsnyC9ib5rqiqTYdXsStUYXaHufm95AMdA', {
+      api_host: 'https://us.i.posthog.com',
+      ui_host: 'https://us.posthog.com',
+      person_profiles: 'identified_only',
+      autocapture: false,
+      capture_pageview: false,
+      disable_session_recording: true,
+      respect_dnt: true,
+      persistence: 'memory'
+    });
+  }
+  if('requestIdleCallback' in window) requestIdleCallback(initAnalytics, { timeout: 3000 });
+  else window.addEventListener('load', function(){ setTimeout(initAnalytics, 1200); });
+</script>
 </head>
 <body class="preauth">
 <header><div class="wrap">
@@ -471,6 +495,9 @@ function initNav(){
 }
 
 function ref(obj){ REF.push(obj); return REF.length - 1; }
+// Thin wrapper so every call site stays one line and never throws if PostHog is blocked/loading.
+function track(event, props){ try{ if(window.posthog && posthog.capture) posthog.capture(event, props||{}); }catch(_){} }
+function decadeLabel(year){ return year ? (Math.floor(Number(year)/10)*10) + 's' : null; }
 
 /* ================= UTILS ================= */
 function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
@@ -527,6 +554,7 @@ function tmdbKey(){ return localStorage.getItem('tmdb_key') || TMDB_DEFAULT; }
 function aiErrorHTML(e){
   var html = '<p style="color:var(--red);margin-top:10px">⚠️ ' + esc(e.message) + '</p>';
   if(e.upgradeRequired){
+    track('paywall_viewed', { trigger: 'ai_limit' });
     // Trial-ended is the one AI error worth pitching, not just apologizing for -- show what
     // upgrading actually gets them instead of a bare error + buttons.
     html += '<div class="card" style="margin-top:8px;padding:12px">'
@@ -541,6 +569,7 @@ function aiErrorHTML(e){
 function openUpgrade(url){
   if(!url){ toast('Upgrade link not set up yet — check back soon', 'err'); return; }
   if(!ME){ toast('Sign in first', 'err'); return; }
+  track('checkout_started', { plan: url===STRIPE_LINK_ANNUAL ? 'annual' : 'monthly' });
   // client_reference_id is how the stripe-webhook function matches a completed checkout back
   // to this Supabase user — Stripe Payment Links pass this straight through to the session.
   var sep = url.indexOf('?') >= 0 ? '&' : '?';
@@ -656,6 +685,9 @@ function afterLogin(session){
     if(res.error) throw new Error(res.error.message);
     PROFILE = res.data || null;
     if(!PROFILE || !PROFILE.display_name){ prefillOnboard(); showGate('onboard'); return; }
+    posthog.set_config && posthog.set_config({ persistence: 'localStorage+cookie' });
+    posthog.identify && posthog.identify(ME.id, { plan: PROFILE.plan || 'free' });
+    track('logged_in', { method: (ME.app_metadata && ME.app_metadata.provider) || 'unknown' });
     enterApp();
   }).catch(function(e){
     // Don't strand the user if the profile lookup fails — let them set a name.
@@ -725,6 +757,9 @@ function saveProfile(){
     if(res.error){ el('obMsg').innerHTML = '<span style="color:var(--red)">⚠️ ' + esc(res.error.message) + '</span>'; return; }
     PROFILE = (res.data && res.data[0]) ? res.data[0] : { id: ME.id, display_name: name };
     SUPA.auth.updateUser({ data: { display_name: name } });
+    posthog.set_config && posthog.set_config({ persistence: 'localStorage+cookie' });
+    posthog.identify && posthog.identify(ME.id, { plan: 'free' });
+    track('signed_up', { method: (ME.app_metadata && ME.app_metadata.provider) || 'unknown' });
     enterApp();
   }).catch(function(e){ el('obMsg').innerHTML = '<span style="color:var(--red)">⚠️ ' + esc(e.message) + '</span>'; });
 }
@@ -1582,6 +1617,7 @@ function listenToEpisode(){
 // this is just for curiosity about your own usage, not monetization. Fire-and-forget: never
 // blocks or delays the actual navigation, and a logging failure is silently ignored.
 function logPodcastClick(platform, title, year){
+  track('episode_link_clicked', { destination: platform, is_played_inapp: false });
   if(!SUPA || !ME) return;
   SUPA.from('podcast_link_clicks').insert({ user_id: ME.id, platform: platform, movie_title: title, movie_year: year || null }).then(function(){}).catch(function(){});
 }
@@ -1926,6 +1962,13 @@ function saveRating(){
   else MY.unshift(optimistic);
   stopDictation(); closeModal(); refreshCounts(); renderRatings(); renderShow(); refreshSuggestBadges();
   toast('Saved: ' + d.title, 'ok');
+  (function(){
+    var tierMap = { 'All-timer':'all_timer', 'Loved':'loved', 'Liked':'liked', 'Meh':'meh', 'Disliked':'disliked' };
+    var isRW = !!rwFind(d.title, d.year);
+    track('movie_rated', { rating_tier: tierMap[d.rating] || d.rating, is_podcast_film: isRW, decade: decadeLabel(d.year) });
+    var filled = ['vibe','pulled_in','fav_actor','fav_scene','didnt_click','notes'].filter(function(k){ return d[k]; }).length;
+    if(filled) track('review_written', { fields_filled: filled, is_podcast_film: isRW });
+  })();
   req.then(function(res){
     if(res.error) throw new Error(res.error.message);
     var rows = res.data;
@@ -2130,6 +2173,7 @@ function followPerson(name, from){
           SUPA.from('followed_people').delete().eq('id', real.id).catch(function(){});
         }
       }
+      track('person_followed', { role: null });
       toast('Following ' + name, 'ok');
     })
     .catch(function(e){ toast('⚠️ Follow failed: ' + e.message, 'err'); loadCloud(); });
@@ -2160,6 +2204,7 @@ function addWatchlist(title, year, source){
           SUPA.from('watchlist').delete().eq('id', real.id).catch(function(){});
         }
       }
+      track('watchlist_added', { is_podcast_film: !!rwFind(title, year) });
       toast('Added to watchlist: ' + title, 'ok');
     })
     .catch(function(e){ toast('⚠️ ' + e.message, 'err'); loadCloud(); });
@@ -2228,6 +2273,12 @@ function refreshSuggestBadges(){
 }
 function runSuggest(){
   var out = el('sugOut');
+  track('suggestion_requested', {
+    mode: SUG_MODE,
+    filter_genre: el('sugGenre') ? el('sugGenre').value : '',
+    filter_decade: el('sugDecade') ? el('sugDecade').value : '',
+    filter_length: el('sugLength') ? el('sugLength').value : ''
+  });
   out.innerHTML = '<p class="muted" style="margin-top:14px"><span class="spin"></span> Building taste profile & asking the AI…</p>';
   var profile = tasteProfile();
   var prompt = '';
@@ -2287,6 +2338,7 @@ function runSuggest(){
         + '<span id="sugwl-' + i + '">' + watchlistToggleHTML(s.title, s.year, 'claude suggestion', true) + '</span></div></div>';
     });
     out.innerHTML = html;
+    track('suggestion_result_shown', { count: arr.length });
   }).catch(function(e){ out.innerHTML = aiErrorHTML(e); });
 }
 
