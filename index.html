@@ -97,11 +97,13 @@ label{font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:.0
 .stat.clickable.sel .n,.stat.clickable.sel .l{color:#171307}
 .controls{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;align-items:center}
 .controls select{width:auto;padding:7px 10px;font-size:13px}
-.rgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:9px}
+.rgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:9px}
 .rcard{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:11px 12px}
 .rcard{display:flex;gap:10px;align-items:flex-start}
-.rcard .poster-thumb{width:46px;height:69px;object-fit:cover;border-radius:6px;flex:none;background:var(--panel2)}
+.rcard .poster-thumb{width:52px;height:78px;object-fit:cover;border-radius:6px;flex:none;background:var(--panel2);cursor:pointer}
 .rcard .rcard-body{flex:1;min-width:0}
+.rcard .rt{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;min-height:35px}
+.rcard .rr{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .rcard:hover{border-color:var(--gold-dim)}
 .rcard-main{cursor:pointer}
 .rcard-main:hover .rt{text-decoration:underline}
@@ -1014,7 +1016,7 @@ function renderRatings(){
     // opens the rating form to view/edit the review.
     var posterKey = norm(r.title) + '|' + (r.year || '');
     html += '<div class="rcard">'
-      + '<img class="poster-thumb" id="rp-' + i + '" data-poster-key="' + esc(posterKey) + '">'
+      + '<img class="poster-thumb" id="rp-' + i + '" data-poster-key="' + esc(posterKey) + '" data-action="movie" data-ref="' + idx + '">'
       + '<div class="rcard-body">'
       + (hasNotes ? '<span class="noteflag" style="cursor:pointer" data-action="rate" data-ref="' + ridx + '" title="Review written — click to view">✎</span>' : '')
       + '<div class="rcard-main" data-action="movie" data-ref="' + idx + '">'
