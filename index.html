@@ -100,10 +100,10 @@ label{font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:.0
 .rgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:9px}
 .rcard{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:11px 12px}
 .rcard{display:flex;gap:10px;align-items:flex-start}
-.rcard .poster-thumb{width:52px;height:78px;object-fit:cover;border-radius:6px;flex:none;background:var(--panel2);cursor:pointer}
+.rcard .poster-thumb{width:58px;height:104px;object-fit:cover;border-radius:6px;flex:none;background:var(--panel2);cursor:pointer}
 .rcard .rcard-body{flex:1;min-width:0}
 .rcard .rt{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;min-height:35px}
-.rcard .rr{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rcard .rr .stars-line{display:block;margin-top:2px;letter-spacing:1px}
 .rcard:hover{border-color:var(--gold-dim)}
 .rcard-main{cursor:pointer}
 .rcard-main:hover .rt{text-decoration:underline}
@@ -1021,7 +1021,7 @@ function renderRatings(){
       + (hasNotes ? '<span class="noteflag" style="cursor:pointer" data-action="rate" data-ref="' + ridx + '" title="Review written — click to view">✎</span>' : '')
       + '<div class="rcard-main" data-action="movie" data-ref="' + idx + '">'
       + '<div class="rt">' + esc(r.title) + '</div><div class="ry">' + esc(r.year||'') + '</div></div>'
-      + '<div class="rr" data-tier="' + esc(r.rating) + '" style="cursor:pointer" data-action="rate" data-ref="' + ridx + '" title="View / edit review">' + starsFor(r.rating) + '</div>'
+      + '<div class="rr" data-tier="' + esc(r.rating) + '" style="cursor:pointer" data-action="rate" data-ref="' + ridx + '" title="View / edit review">' + esc(r.rating) + '<span class="stars-line">' + new Array((RATING_STARS[r.rating]||0)+1).join('★') + '</span></div>'
       + '</div></div>';
   }
   el('rGrid').innerHTML = html || '<p class="muted">No ratings match.</p>';
