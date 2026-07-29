@@ -857,12 +857,54 @@ function populateGuestFilter(){
 
 
 /* ================= TMDB ================= */
-function tmdb(path, params){
+function tmdb(path, params, _retry){
   var qs = 'api_key=' + tmdbKey();
   if(params){ for(var k in params){ qs += '&' + k + '=' + encodeURIComponent(params[k]); } }
   return fetch('https://api.themoviedb.org/3/' + path + '?' + qs).then(function(r){
+    // TMDB rate-limits bursty traffic (e.g. rendering 70+ followed people at once, each firing
+    // a couple of requests) with 429s. Retry a few times with backoff instead of treating a
+    // rate-limit as a real failure -- otherwise callers like getOnShowCount() end up silently
+    // caching a wrong "0" for people who genuinely do have Rewatchables appearances.
+    if(r.status === 429 && (_retry||0) < 4){
+      var wait = 400 * Math.pow(2, _retry||0);
+      return new Promise(function(res){ setTimeout(res, wait); }).then(function(){
+        return tmdb(path, params, (_retry||0)+1);
+      });
+    }
     if(!r.ok) throw new Error('TMDB ' + r.status);
     return r.json();
+  });
+}
+// Shared cache for name-based person search -- loadPersonThumb() and getOnShowCount() both need
+// "look up this followed person's TMDB id by name", and used to each fire their own separate
+// search/person request for the same person, doubling load during Following-tab renders. One
+// shared in-flight promise per name means each followed person is searched at most once per
+// session, and a failed lookup isn't cached (so it gets a clean retry next time it's needed).
+var PERSON_SEARCH_CACHE = {};
+function tmdbSearchPerson(name){
+  var key = name.toLowerCase();
+  if(PERSON_SEARCH_CACHE[key]) return PERSON_SEARCH_CACHE[key];
+  var p = tmdb('search/person', { query:name }).then(function(res){ return (res.results||[])[0] || null; });
+  PERSON_SEARCH_CACHE[key] = p;
+  p.catch(function(){ delete PERSON_SEARCH_CACHE[key]; });
+  return p;
+}
+// Runs `fn` over `arr` with at most `limit` in flight at once -- used anywhere we'd otherwise
+// fire dozens of simultaneous TMDB requests (e.g. every followed person's badge + thumbnail).
+function mapLimit(arr, limit, fn){
+  return new Promise(function(resolve){
+    var i = 0, active = 0;
+    if(!arr.length){ resolve(); return; }
+    function next(){
+      if(i >= arr.length && active === 0){ resolve(); return; }
+      while(active < limit && i < arr.length){
+        (function(item){
+          active++;
+          fn(item).then(function(){ active--; next(); }, function(){ active--; next(); });
+        })(arr[i++]);
+      }
+    }
+    next();
   });
 }
 function tmdbMovie(id){
@@ -1156,7 +1198,7 @@ function renderPeople(){
     // already in hand -- show a brief loading state, then render once counts are in (cached
     // after the first pass, so switching back to this sort later is instant).
     el('peopleGrid').innerHTML = '<p class="muted"><span class="spin"></span> Counting Rewatchables appearances…</p>';
-    Promise.all(PEOPLE.map(function(p){ return getOnShowCount(p.name); })).then(function(){
+    mapLimit(PEOPLE, 5, function(p){ return getOnShowCount(p.name); }).then(function(){
       var sorted = PEOPLE.slice().sort(function(a,b){
         var ca = ONSHOW_CACHE[a.name.toLowerCase()] || 0, cb = ONSHOW_CACHE[b.name.toLowerCase()] || 0;
         return cb - ca || a.name.localeCompare(b.name);
@@ -1186,7 +1228,7 @@ function renderPeopleGrid(arr){
     })(arr[i]);
   }
   el('peopleGrid').innerHTML = html || '<p class="muted">Not following anyone yet.</p>';
-  arr.forEach(function(p){ loadPersonThumb(p); loadPersonOnShowBadge(p); });
+  mapLimit(arr, 5, function(p){ return Promise.all([loadPersonThumb(p), loadPersonOnShowBadge(p)]); });
 }
 // Rewatchables-appearance count per followed person -- cached across renders/tab switches so
 // re-sorting or reopening Following doesn't re-fetch. Cross-checks TMDB combined_credits (cast +
@@ -1196,8 +1238,7 @@ var ONSHOW_CACHE = {};
 function getOnShowCount(name){
   var key = name.toLowerCase();
   if(ONSHOW_CACHE[key] != null) return Promise.resolve(ONSHOW_CACHE[key]);
-  return tmdb('search/person', { query:name }).then(function(res){
-    var hit = (res.results||[])[0];
+  return tmdbSearchPerson(name).then(function(hit){
     if(!hit){ ONSHOW_CACHE[key] = 0; return 0; }
     return tmdbPerson(hit.id).then(function(p){
       var cc = p.combined_credits || {}, seen = {}, count = 0;
@@ -1216,11 +1257,17 @@ function getOnShowCount(name){
       ONSHOW_CACHE[key] = count;
       return count;
     });
-  }).catch(function(){ ONSHOW_CACHE[key] = 0; return 0; });
+  }).catch(function(){
+    // A genuine fetch failure (rate limit exhausted its retries, network hiccup, etc) -- do NOT
+    // cache a fake 0 here. Leaving ONSHOW_CACHE unset means the next time this person's badge is
+    // rendered (re-sort, reopening Following, next page load) it gets an honest retry instead of
+    // being stuck showing an incorrect zero for the rest of the session.
+    return 0;
+  });
 }
 function loadPersonOnShowBadge(p){
   var pid = p.id.replace(/-/g,'');
-  getOnShowCount(p.name).then(function(count){
+  return getOnShowCount(p.name).then(function(count){
     var box = el('pcount_' + pid);
     if(box) box.textContent = count;
   });
@@ -1230,8 +1277,7 @@ function loadPersonOnShowBadge(p){
 // department label.
 var ROLE_LABELS = { Acting:'Actor', Directing:'Director', Writing:'Writer', Production:'Producer', Sound:'Composer', Editing:'Editor', Camera:'Cinematographer' };
 function loadPersonThumb(p){
-  tmdb('search/person', { query: p.name }).then(function(res){
-    var hit = (res.results||[])[0];
+  return tmdbSearchPerson(p.name).then(function(hit){
     var box = el('pimg_' + p.id.replace(/-/g,''));
     if(box && hit && hit.profile_path) box.innerHTML = '<img src="' + IMG + 'w185' + hit.profile_path + '" style="width:100%;height:100%;object-fit:cover">';
     else if(box) box.innerHTML = '<div style="line-height:74px;font-size:26px">🎬</div>';
