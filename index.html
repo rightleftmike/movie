@@ -213,6 +213,22 @@ label{font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:.0
 .paywall-icon{font-size:26px}
 .paywall-head{font-family:'Bebas Neue',sans-serif;font-size:19px;color:var(--gold);margin-top:2px}
 .paywall-sub{font-size:12.5px;color:var(--dim);line-height:1.5;margin:6px auto 0;max-width:320px}
+/* Voice Rating (premium): full-screen conversational overlay -- Gemini TTS asks each rating-form
+   field as a spoken question with captions, Web Speech API (same engine as the mic dictation
+   buttons) live-transcribes the spoken answer, then the captured answers prefill the normal
+   rating form for review/save -- nothing is written to the DB until that form's own Save. */
+.voice-modal{max-width:460px;text-align:center}
+.voice-progress{font-size:11px;color:var(--dim);letter-spacing:.04em;text-transform:uppercase;margin-bottom:14px}
+.voice-orb{width:64px;height:64px;margin:0 auto 18px;border-radius:50%;background:radial-gradient(circle at 35% 30%,var(--gold),#5b4a1e);display:flex;align-items:center;justify-content:center;font-size:26px}
+.voice-orb.speaking{animation:aithink 1.1s ease-in-out infinite}
+.voice-orb.listening{animation:micpulse 1s ease-in-out infinite;background:radial-gradient(circle at 35% 30%,var(--red),#5b1e1e)}
+.voice-caption{font-size:18px;line-height:1.4;min-height:50px;margin-bottom:10px}
+.voice-transcript{font-size:14px;color:var(--dim);min-height:22px;margin-bottom:16px;font-style:italic}
+.voice-transcript.live{color:var(--txt);font-style:normal}
+.voice-controls{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
+.voice-hint{font-size:11px;color:var(--dim);margin-top:12px}
+.voice-rate-btn{position:relative}
+.voice-premium-tag{font-size:9px;background:var(--gold);color:#1a1608;border-radius:4px;padding:1px 4px;margin-left:5px;vertical-align:1px;font-weight:700;letter-spacing:.03em}
 .seg{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}
 .seg .chip.sel{font-weight:700}
 .kv{font-size:13px;margin:8px 0;color:var(--dim)}
@@ -388,6 +404,7 @@ body.preauth header, body.preauth #appWrap{display:none!important}
 <div class="drawer-veil" id="drVeil" data-action="closedrawer"></div>
 <div class="drawer" id="drawer"></div>
 <div class="modal-veil" id="modalVeil"><div class="modal" id="modal"></div></div>
+<div class="modal-veil" id="voiceVeil"><div class="modal voice-modal" id="voiceModal"></div></div>
 <div class="modal-veil" id="ageVeil"><div class="modal" id="ageModal" style="max-width:380px"></div></div>
 <div class="modal-veil" id="lbVeil" data-action="closelightbox" style="z-index:90"><img id="lbImg" style="max-width:92vw;max-height:92vh;display:block;margin:40px auto;border-radius:8px"></div>
 <div class="mini-player" id="miniPlayer">
@@ -1505,6 +1522,7 @@ function movieCardHTML(m){
   var ridx = ref({ type:'ratemovie', movie:m });
   var buttons = '<div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">';
   buttons += '<button class="btn btn-gold" data-action="rate" data-ref="' + ridx + '">' + (mine ? '✎ Edit My Rating' : '+ Add My Rating') + '</button>';
+  buttons += '<button class="btn btn-outline voice-rate-btn" data-action="voicerate" data-ref="' + ridx + '">🎤️ Rate by Voice<span class="voice-premium-tag">PREMIUM</span></button>';
   if(!mine) buttons += watchlistToggleHTML(m.title, year, 'movie card');
   buttons += '</div>';
 
@@ -1954,10 +1972,16 @@ function personDrawerHTML(p){
 }
 
 /* ================= RATING FORM ================= */
-function openRatingForm(ctx){
+function openRatingForm(ctx, prefill){
   // ctx: {title, year, movie(optional tmdb obj)}
+  // prefill (optional): field values captured by the Voice Rating flow, layered on top of
+  // whatever real DB row `existing` resolves to for the very first render only. Kept separate
+  // from `existing` itself (rather than merged into it) so saveRating()'s insert-vs-update check
+  // (`if(FORM.existing)`) still reflects whether a real row exists -- merging prefill into
+  // `existing` would make a brand-new voice-rated film look like it already had a saved row and
+  // wrongly attempt an UPDATE instead of an INSERT.
   var existing = myFind(ctx.title, ctx.year);
-  FORM = { title: ctx.title, year: ctx.year, movie: ctx.movie || null, existing: existing || null, follow: {} };
+  FORM = { title: ctx.title, year: ctx.year, movie: ctx.movie || null, existing: existing || null, prefill: prefill || null, follow: {} };
   renderRatingForm();
   el('modalVeil').classList.add('open');
   if(!FORM.movie){
@@ -1975,7 +1999,7 @@ function ratingOpts(sel){
   }).join('');
 }
 function renderRatingForm(keepVals){
-  var e = FORM.existing || {};
+  var e = Object.assign({}, FORM.existing || {}, FORM.prefill || {});
   var vals = keepVals ? collectForm() : null;
   function v(field, old){ return vals ? (vals[field]==null?'':vals[field]) : (old==null?'':old); }
 
@@ -2202,6 +2226,217 @@ function wireMicButtons(){
       b.title = 'Voice dictation isn’t supported in this browser (try Chrome, Edge, or Safari)';
     });
   }
+}
+
+/* ================= VOICE RATING (premium: Gemini TTS + Web Speech STT) =================
+   A full-screen conversational alternative to the click-through rating form. Each field is
+   asked as a spoken question (Gemini TTS via the voice-tts edge function) with an on-screen
+   caption; the user answers by voice, live-transcribed with the same Web Speech API engine
+   that already powers the mic-dictation buttons above. Skipping is always available, by
+   button or by saying "skip". Nothing is saved directly -- when the flow finishes (or is
+   ended early via the (X) button), the captured answers just prefill the normal rating form
+   (openRatingForm's `prefill` param) so the existing Save/Refine/Delete flow is unchanged. */
+var VOICE_QUESTIONS = [
+  { field:'rating', type:'tier', prompt:'How would you rate it: all-timer, loved, liked, meh, or disliked?' },
+  { field:'rewatch', type:'yesno', prompt:'Would you watch it again?' },
+  { field:'times_seen', type:'number', prompt:'About how many times have you seen it?' },
+  { field:'first_seen_year', type:'year', prompt:'What year did you first see it?' },
+  { field:'vibe', type:'text', prompt:'What stuck with you about it?' },
+  { field:'fav_actor', type:'text', prompt:'Any standout performance?' },
+  { field:'didnt_click', type:'text', prompt:'Anything that didn’t click for you?' }
+];
+var VOICE = null; // { ctx, idx, answers, rec, audio }
+
+function voicePaywallHTML(){
+  track('paywall_viewed', { trigger: 'voice_rating' });
+  return '<button class="modal-x" data-action="closevoice" title="Close">✕</button>'
+    + '<div class="paywall-card" style="margin-top:28px;text-align:left">'
+    + '<div class="paywall-preview"><div class="suggestion"><div class="st">🎤 Voice Rating</div>'
+    + '<p style="font-size:13.5px;margin:6px 0">Rate a film through a spoken conversation instead of typing…</p></div></div>'
+    + '<div class="paywall-overlay">'
+    + '<div class="paywall-icon">⭐</div>'
+    + '<div class="paywall-head">Voice Rating is a Premium feature</div>'
+    + '<div class="paywall-sub">Upgrade to have a spoken conversation walk you through rating a film — rating, rewatch, and your notes, all by voice.</div>'
+    + '<button class="btn btn-gold" style="margin-top:12px;width:100%;max-width:280px" data-action="upgradeannual">⭐ Upgrade — $19.99/yr</button>'
+    + '<div style="margin-top:8px"><button class="btn" style="background:transparent;border:none;font-size:12px;color:var(--gold-dim);text-decoration:underline;padding:0" data-action="upgrademonthly">or $2.99/mo</button></div>'
+    + '</div></div>';
+}
+
+function openVoiceRating(ctx){
+  if(!SpeechRec){ toast('Voice dictation isn’t supported in this browser (try Chrome or Edge)', 'err'); return; }
+  if(!PROFILE || PROFILE.plan !== 'paid'){
+    el('voiceModal').innerHTML = voicePaywallHTML();
+    el('voiceVeil').classList.add('open');
+    return;
+  }
+  var existing = myFind(ctx.title, ctx.year);
+  VOICE = { ctx: ctx, idx: -1, answers: {}, existing: existing || null, rec: null, audio: null };
+  track('voice_rating_started', {});
+  el('voiceVeil').classList.add('open');
+  voiceAdvance();
+}
+
+function closeVoiceOverlay(){
+  if(VOICE){
+    if(VOICE.rec){ try{ VOICE.rec.stop(); }catch(_){} }
+    if(VOICE.audio){ try{ VOICE.audio.pause(); }catch(_){} }
+  }
+  el('voiceVeil').classList.remove('open');
+  var v = VOICE; VOICE = null;
+  return v;
+}
+// Called by the (X) button -- if any answers were already captured, hands them to the normal
+// rating form for review instead of silently discarding a partly-finished voice session.
+function attemptCloseVoice(){
+  var v = closeVoiceOverlay();
+  if(v && Object.keys(v.answers).length){
+    track('voice_rating_ended_early', { answered: Object.keys(v.answers).length });
+    openRatingForm(v.ctx, v.answers);
+  }
+}
+
+function renderVoiceStep(caption, transcript, listening, speaking){
+  var total = VOICE_QUESTIONS.length;
+  var n = Math.min(VOICE.idx + 1, total);
+  var orbClass = speaking ? 'speaking' : (listening ? 'listening' : '');
+  var orbIcon = speaking ? '🔊' : (listening ? '🎙️' : '✨');
+  el('voiceModal').innerHTML = '<button class="modal-x" data-action="closevoice" title="Close">✕</button>'
+    + '<div class="voice-progress">Question ' + n + ' of ' + total + '</div>'
+    + '<div class="voice-orb ' + orbClass + '">' + orbIcon + '</div>'
+    + '<div class="voice-caption">' + esc(caption) + '</div>'
+    + '<div class="voice-transcript' + (transcript ? ' live' : '') + '">' + esc(transcript || (listening ? 'Listening…' : '')) + '</div>'
+    + '<div class="voice-controls">'
+    + '<button class="btn btn-outline" data-action="voiceskip">Skip</button>'
+    + (listening ? '<button class="btn btn-gold" data-action="voicedone">Done</button>' : '')
+    + '</div>'
+    + '<div class="voice-hint">Say “skip” to move on, or tap Skip</div>';
+}
+
+function voiceAdvance(){
+  if(!VOICE) return;
+  VOICE.idx++;
+  if(VOICE.idx >= VOICE_QUESTIONS.length){ finishVoiceRating(); return; }
+  var q = VOICE_QUESTIONS[VOICE.idx];
+  renderVoiceStep(q.prompt, '', false, true);
+  voiceSpeak(q.prompt).then(function(){
+    if(!VOICE) return; // overlay was closed mid-speech
+    voiceListen(q);
+  });
+}
+
+// Wraps headerless PCM (as returned by Gemini TTS) in a minimal 44-byte WAV header so a plain
+// <audio> element can play it -- both decodeAudioData and <audio src> need a real container,
+// and adding the header client-side avoids any server-side audio processing.
+function pcmToWavUrl(b64, sampleRate, channels, bitsPerSample){
+  var bin = atob(b64), len = bin.length;
+  var pcm = new Uint8Array(len);
+  for(var i=0;i<len;i++) pcm[i] = bin.charCodeAt(i);
+  var blockAlign = channels * (bitsPerSample/8), byteRate = sampleRate * blockAlign;
+  var buffer = new ArrayBuffer(44 + len), view = new DataView(buffer);
+  function ws(o, s){ for(var i=0;i<s.length;i++) view.setUint8(o+i, s.charCodeAt(i)); }
+  ws(0,'RIFF'); view.setUint32(4, 36+len, true); ws(8,'WAVE');
+  ws(12,'fmt '); view.setUint32(16,16,true); view.setUint16(20,1,true);
+  view.setUint16(22,channels,true); view.setUint32(24,sampleRate,true);
+  view.setUint32(28,byteRate,true); view.setUint16(32,blockAlign,true); view.setUint16(34,bitsPerSample,true);
+  ws(36,'data'); view.setUint32(40,len,true);
+  new Uint8Array(buffer,44).set(pcm);
+  return URL.createObjectURL(new Blob([buffer], {type:'audio/wav'}));
+}
+// Speaks one question via the voice-tts edge function. Resolves once playback ends (or
+// immediately, leaving the caption text-only, if TTS fails/rate-limits) -- speech failing is
+// never allowed to block the rating flow, just its narration.
+function voiceSpeak(text){
+  if(!SUPA || !ME) return Promise.resolve();
+  return SUPA.auth.getSession().then(function(res){
+    var session = res.data && res.data.session;
+    if(!session) throw new Error('not signed in');
+    return fetch(SB_URL + '/functions/v1/voice-tts', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + session.access_token, 'content-type': 'application/json' },
+      body: JSON.stringify({ text: text })
+    });
+  }).then(function(r){ return r.json().catch(function(){ return {}; }).then(function(j){ return { ok:r.ok, j:j }; }); })
+    .then(function(res){
+      if(!res.ok || !res.j.audio || !VOICE) return; // degrade to caption-only, silently
+      return new Promise(function(resolve){
+        var url = pcmToWavUrl(res.j.audio, res.j.sampleRate, res.j.channels, res.j.bitsPerSample);
+        var audio = new Audio(url);
+        VOICE.audio = audio;
+        audio.onended = audio.onerror = function(){ URL.revokeObjectURL(url); resolve(); };
+        audio.play().catch(function(){ resolve(); });
+      });
+    }).catch(function(){ /* degrade silently -- caption text is already on screen */ });
+}
+
+// Starts live-transcribed listening for one question. Reuses the same SpeechRec engine as the
+// textarea mic buttons (toggleDictation), but standalone -- there's no textarea backing this,
+// just the on-screen caption/transcript -- and it recognizes a bare "skip" as its own command
+// instead of writing the word "skip" into the answer.
+function voiceListen(q){
+  if(!VOICE) return;
+  var rec = new SpeechRec();
+  rec.lang = 'en-US'; rec.continuous = true; rec.interimResults = true;
+  VOICE.rec = rec;
+  var finalTxt = '';
+  renderVoiceStep(q.prompt, '', true, false);
+  rec.onresult = function(ev){
+    if(!VOICE) return;
+    var interim = '';
+    for(var i=ev.resultIndex; i<ev.results.length; i++){
+      var piece = ev.results[i][0].transcript;
+      if(ev.results[i].isFinal) finalTxt += piece; else interim += piece;
+    }
+    var shown = (finalTxt + ' ' + interim).trim();
+    renderVoiceStep(q.prompt, shown, true, false);
+    if(/^\s*skip\.?\s*$/i.test(shown)){ try{ rec.stop(); }catch(_){} voiceSkip(); }
+  };
+  rec.onerror = function(){ try{ rec.stop(); }catch(_){} };
+  rec.onend = function(){ if(VOICE && VOICE.rec===rec) VOICE.rec = null; };
+  try{ rec.start(); }catch(_){ voiceAdvance(); }
+}
+function voiceFinalizeAnswer(){
+  if(!VOICE) return;
+  var q = VOICE_QUESTIONS[VOICE.idx];
+  var box = el('voiceModal') ? el('voiceModal').querySelector('.voice-transcript') : null;
+  var transcript = box ? box.textContent : '';
+  if(VOICE.rec){ try{ VOICE.rec.stop(); }catch(_){} }
+  var parsed = parseVoiceAnswer(q, (transcript||'').replace('Listening…','').trim());
+  if(parsed != null) VOICE.answers[q.field] = parsed;
+  voiceAdvance();
+}
+function voiceSkip(){
+  if(!VOICE) return;
+  if(VOICE.rec){ try{ VOICE.rec.stop(); }catch(_){} }
+  voiceAdvance();
+}
+function parseVoiceAnswer(q, text){
+  if(!text) return null;
+  var t = text.toLowerCase();
+  if(q.type === 'tier'){
+    if(/all[\s-]?timer/.test(t)) return 'All-timer';
+    if(/love/.test(t)) return 'Loved';
+    if(/like/.test(t)) return 'Liked';
+    if(/\bmeh\b|\bmid\b|okay|\bok\b/.test(t)) return 'Meh';
+    if(/dislike|hate|bad|terrible/.test(t)) return 'Disliked';
+    return null;
+  }
+  if(q.type === 'yesno'){
+    if(/\b(yes|yeah|yep|yup|sure|definitely|absolutely)\b/.test(t)) return 'Yes';
+    if(/\b(no|nah|nope|not really)\b/.test(t)) return 'No';
+    return null;
+  }
+  if(q.type === 'number' || q.type === 'year'){
+    var m = t.match(/\d+/);
+    return m ? parseInt(m[0], 10) : null;
+  }
+  return text; // free-text fields: use the transcript as-is
+}
+function finishVoiceRating(){
+  var v = closeVoiceOverlay();
+  if(!v) return;
+  track('voice_rating_completed', { answered: Object.keys(v.answers).length, total: VOICE_QUESTIONS.length });
+  toast('Got it — review below', 'ok');
+  openRatingForm(v.ctx, v.answers);
 }
 
 // Reverse-engineers the cast-chip click behavior: as the Standout performance text changes
@@ -2607,6 +2842,13 @@ document.addEventListener('click', function(ev){
   else if(action==='podlink'){ if(r) logPodcastClick(r.platform, r.title, r.year); }
   else if(action==='loadclickstats') loadClickStats();
   else if(action==='mic') toggleDictation(t.getAttribute('data-target'), t);
+  else if(action==='voicerate'){
+    if(r && r.type==='ratemovie'){ var vy=(r.movie.release_date||'').slice(0,4); openVoiceRating({ title:r.movie.title, year:vy?Number(vy):null, movie:r.movie }); }
+    else if(r) openVoiceRating({ title:r.title, year:r.year });
+  }
+  else if(action==='closevoice') attemptCloseVoice();
+  else if(action==='voiceskip') voiceSkip();
+  else if(action==='voicedone') voiceFinalizeAnswer();
   else if(action==='rate'){
     if(r && r.type==='ratemovie'){ var y=(r.movie.release_date||'').slice(0,4); openRatingForm({ title:r.movie.title, year:y?Number(y):null, movie:r.movie }); }
     else if(r) openRatingForm({ title:r.title, year:r.year });
