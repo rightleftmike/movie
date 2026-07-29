@@ -456,7 +456,23 @@ var movieCache = {}, personCache = {};
 // repaint just that view in place (fresh badge/button state) without a network refetch.
 var CURRENT_CARD_MOVIE = null;
 var CURRENT_DRAWER_PERSON = null;
-function refreshMovieCard(){ if(CURRENT_CARD_MOVIE) el('cardBox').innerHTML = movieCardHTML(CURRENT_CARD_MOVIE); }
+// Rebuilding the card's HTML (movieCardHTML) resets the "Rewatchables Episode" section back to
+// its pristine empty <div id="epBox"> -- the episode feed/links are only ever filled in
+// separately, by fillEpisodeBox(), which openMovieCard() calls once right after the initial
+// render. This function is also called any time the open card needs a fresh badge/button repaint
+// (following/unfollowing someone from the cast list, toggling the watchlist) -- without also
+// re-calling fillEpisodeBox() here, that section would just stay blank after any such action, with
+// no spinner and no error, since nothing else ever re-triggers it. That's the "episode links
+// sometimes don't load" bug: it depends entirely on whether you touched follow/watchlist while the
+// card was open. loadFeed() caches the parsed RSS feed after the first fetch, so re-calling this is
+// free after the first time on any given visit.
+function refreshMovieCard(){
+  if(!CURRENT_CARD_MOVIE) return;
+  el('cardBox').innerHTML = movieCardHTML(CURRENT_CARD_MOVIE);
+  var m = CURRENT_CARD_MOVIE;
+  var epy = m.release_date ? m.release_date.slice(0,4) : '';
+  if(rwFind(m.title, epy)) fillEpisodeBox(m.title, epy ? Number(epy) : null);
+}
 function refreshPersonDrawer(){
   if(!CURRENT_DRAWER_PERSON) return;
   var dr = el('drawer'), scrollY = dr.scrollTop;
