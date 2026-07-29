@@ -2008,7 +2008,7 @@ function renderRatingForm(keepVals){
     + '<div><label>Rating</label><select id="rf_rating">' + ratingOpts(v('rating', e.rating) || 'Loved') + '</select></div>'
     + '<div><label>Would rewatch?</label><select id="rf_rewatch"><option' + ((v('rewatch', e.rewatch)||'Yes')==='Yes'?' selected':'') + '>Yes</option><option' + (v('rewatch', e.rewatch)==='No'?' selected':'') + '>No</option></select></div>'
     + '<div><label>Times seen</label><input type="number" id="rf_times" min="0" value="' + esc(v('times_seen', e.times_seen)) + '"></div>'
-    + '<div><label>First seen (year)</label><input type="number" id="rf_first" value="' + esc(v('first_seen_year', e.first_seen_year)) + '"></div>'
+    + '<div><label>First seen (year)</label><input type="number" id="rf_first" min="' + esc(FORM.year || '') + '" value="' + esc(v('first_seen_year', e.first_seen_year) || FORM.year || '') + '"></div>'
     + '</div>'
     + taBlock('rf_vibe', 'What stuck with me', v('vibe', e.vibe), 'Vibe, what pulled you in, a favorite scene — whatever comes to mind')
     + taBlock('rf_actor', 'Standout performance', v('fav_actor', e.fav_actor)) + castChips
