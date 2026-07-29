@@ -2362,8 +2362,15 @@ function voiceSpeak(text){
         var url = pcmToWavUrl(res.j.audio, res.j.sampleRate, res.j.channels, res.j.bitsPerSample);
         var audio = new Audio(url);
         VOICE.audio = audio;
-        audio.onended = audio.onerror = function(){ URL.revokeObjectURL(url); resolve(); };
-        audio.play().catch(function(){ resolve(); });
+        var done = false;
+        // Safety net: some browsers/contexts can leave play() neither resolving nor firing
+        // onended (silently blocked autoplay, a stalled decode, etc.) -- a spoken question must
+        // never be able to hang the whole rating flow, so force-advance after a generous cap
+        // (well over the ~2-6s a single question realistically takes to speak).
+        function finish(){ if(done) return; done = true; URL.revokeObjectURL(url); resolve(); }
+        audio.onended = finish; audio.onerror = finish;
+        audio.play().catch(finish);
+        setTimeout(finish, 12000);
       });
     }).catch(function(){ /* degrade silently -- caption text is already on screen */ });
 }
