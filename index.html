@@ -316,8 +316,6 @@ body.preauth header, body.preauth #appWrap{display:none!important}
       <button class="btn btn-gold btn-sm" data-action="upgrademonthly">⭐ Upgrade — $2.99/mo</button>
       <button class="btn btn-outline btn-sm" data-action="upgradeannual" style="margin-left:6px">⭐ Upgrade — $19.99/yr</button>
     </div>
-    <label>TMDB API key</label>
-    <input type="text" id="setTmdb">
     <label>Supabase</label>
     <div class="kv" id="sbStatus">Checking…</div>
     <label>Episode list source</label>
@@ -2487,7 +2485,6 @@ el('showSort').addEventListener('change', renderShow);
 el('showGuest').addEventListener('change', renderShow);
 el('peopleSort').addEventListener('change', renderPeople);
 el('fSort').addEventListener('change', renderRatings);
-el('setTmdb').addEventListener('change', function(){ localStorage.setItem('tmdb_key', el('setTmdb').value.trim()); toast('TMDB key saved', 'ok'); });
 document.addEventListener('click', function(e){ if(!e.target.closest('.searchrow')) hideAC(); });
 el('authEmail').addEventListener('keydown', function(e){ if(e.key==='Enter') sendMagicLink(); });
 el('obName').addEventListener('keydown', function(e){ if(e.key==='Enter') saveProfile(); });
@@ -2537,7 +2534,6 @@ el('obName').addEventListener('keydown', function(e){ if(e.key==='Enter') savePr
 })();
 
 /* ================= INIT ================= */
-el('setTmdb').value = tmdbKey();
 // Data loading now happens inside enterApp(), after the user is authenticated.
 initAuth();
 </script>
