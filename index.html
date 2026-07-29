@@ -217,7 +217,8 @@ label{font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:.0
    field as a spoken question with captions, Web Speech API (same engine as the mic dictation
    buttons) live-transcribes the spoken answer, then the captured answers prefill the normal
    rating form for review/save -- nothing is written to the DB until that form's own Save. */
-.voice-modal{max-width:460px;text-align:center}
+#voiceVeil{background:rgba(0,0,0,.25)}
+.voice-modal{max-width:460px;text-align:center;background:rgba(20,18,14,.6);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
 .voice-progress{font-size:11px;color:var(--dim);letter-spacing:.04em;text-transform:uppercase;margin-bottom:14px}
 .voice-orb{width:64px;height:64px;margin:0 auto 18px;border-radius:50%;background:radial-gradient(circle at 35% 30%,var(--gold),#5b4a1e);display:flex;align-items:center;justify-content:center;font-size:26px}
 .voice-orb.speaking{animation:aithink 1.1s ease-in-out infinite}
@@ -227,6 +228,7 @@ label{font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:.0
 .voice-transcript.live{color:var(--txt);font-style:normal}
 .voice-controls{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
 .voice-hint{font-size:11px;color:var(--dim);margin-top:12px}
+.voice-controls .btn.muted{border-color:var(--red);color:var(--red)}
 .voice-rate-btn{position:relative}
 .voice-premium-tag{font-size:9px;background:var(--gold);color:#1a1608;border-radius:4px;padding:1px 4px;margin-left:5px;vertical-align:1px;font-weight:700;letter-spacing:.03em}
 .seg{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}
@@ -2044,6 +2046,7 @@ function renderRatingForm(keepVals){
     + '<div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap">'
     + '<button class="btn btn-gold" data-action="saverating">💾 Save</button>'
     + '<button class="btn btn-outline" data-action="refine">✨ Refine notes</button>'
+    + '<button class="btn btn-outline voice-rate-btn" data-action="voicerateform">🎤️ Speak to Rate<span class="voice-premium-tag">PREMIUM</span></button>'
     + '<button class="btn" data-action="closemodal">Cancel</button>'
     + (FORM.existing ? '<button class="btn btn-red" data-action="deleterating" style="margin-left:auto">🗑 Delete review</button>' : '')
     + '</div>';
@@ -2245,7 +2248,7 @@ var VOICE_QUESTIONS = [
   { field:'fav_actor', type:'text', prompt:'Any standout performance?' },
   { field:'didnt_click', type:'text', prompt:'Anything that didn’t click for you?' }
 ];
-var VOICE = null; // { ctx, idx, answers, rec, audio }
+var VOICE = null; // { ctx, idx, answers, rec, audio, muted, speaking, transcript }
 
 function voicePaywallHTML(){
   track('paywall_viewed', { trigger: 'voice_rating' });
@@ -2270,7 +2273,7 @@ function openVoiceRating(ctx){
     return;
   }
   var existing = myFind(ctx.title, ctx.year);
-  VOICE = { ctx: ctx, idx: -1, answers: {}, existing: existing || null, rec: null, audio: null };
+  VOICE = { ctx: ctx, idx: -1, answers: {}, existing: existing || null, rec: null, audio: null, muted: false, speaking: false, transcript: '' };
   track('voice_rating_started', {});
   el('voiceVeil').classList.add('open');
   voiceAdvance();
@@ -2295,33 +2298,45 @@ function attemptCloseVoice(){
   }
 }
 
-function renderVoiceStep(caption, transcript, listening, speaking){
+// Single render, driven entirely off VOICE's current state rather than passed-in args -- needed
+// now that speaking/listening/muted can all change independently (barge-in, mute toggle) and
+// each needs to be able to trigger a repaint on its own.
+function renderVoiceStep(){
+  if(!VOICE) return;
+  var q = VOICE_QUESTIONS[VOICE.idx];
+  if(!q) return;
   var total = VOICE_QUESTIONS.length;
   var n = Math.min(VOICE.idx + 1, total);
-  var orbClass = speaking ? 'speaking' : (listening ? 'listening' : '');
-  var orbIcon = speaking ? '🔊' : (listening ? '🎙️' : '✨');
+  var orbClass = VOICE.speaking ? 'speaking' : 'listening';
+  var orbIcon = VOICE.speaking ? '🔊' : '🎙️';
+  var transcript = VOICE.transcript || '';
   el('voiceModal').innerHTML = '<button class="modal-x" data-action="closevoice" title="Close">✕</button>'
     + '<div class="voice-progress">Question ' + n + ' of ' + total + '</div>'
     + '<div class="voice-orb ' + orbClass + '">' + orbIcon + '</div>'
-    + '<div class="voice-caption">' + esc(caption) + '</div>'
-    + '<div class="voice-transcript' + (transcript ? ' live' : '') + '">' + esc(transcript || (listening ? 'Listening…' : '')) + '</div>'
+    + '<div class="voice-caption">' + esc(q.prompt) + '</div>'
+    + '<div class="voice-transcript' + (transcript ? ' live' : '') + '">' + esc(transcript || 'Listening…') + '</div>'
     + '<div class="voice-controls">'
+    + '<button class="btn btn-outline' + (VOICE.muted ? ' muted' : '') + '" data-action="voicemute">' + (VOICE.muted ? '🔇 Unmute' : '🔊 Mute') + '</button>'
     + '<button class="btn btn-outline" data-action="voiceskip">Skip</button>'
-    + (listening ? '<button class="btn btn-gold" data-action="voicedone">Done</button>' : '')
+    + '<button class="btn btn-gold" data-action="voicedone">Done</button>'
     + '</div>'
-    + '<div class="voice-hint">Say “skip” to move on, or tap Skip</div>';
+    + '<div class="voice-hint">Talk any time to cut in — say “skip” to move on, or tap Skip</div>';
 }
 
 function voiceAdvance(){
   if(!VOICE) return;
   VOICE.idx++;
   if(VOICE.idx >= VOICE_QUESTIONS.length){ finishVoiceRating(); return; }
+  VOICE.transcript = '';
+  VOICE.speaking = !VOICE.muted;
+  renderVoiceStep();
   var q = VOICE_QUESTIONS[VOICE.idx];
-  renderVoiceStep(q.prompt, '', false, true);
-  voiceSpeak(q.prompt).then(function(){
-    if(!VOICE) return; // overlay was closed mid-speech
-    voiceListen(q);
-  });
+  // Speaking and listening now run concurrently on purpose: voiceListen starts the mic
+  // immediately instead of waiting for narration to finish, so talking over the question -- a
+  // barge-in, same as cutting off a person mid-sentence -- stops the TTS audio right away
+  // (handled inside voiceListen's onresult). voiceSpeak is fire-and-forget here for that reason.
+  voiceSpeak(q.prompt);
+  voiceListen(q);
 }
 
 // Wraps headerless PCM (as returned by Gemini TTS) in a minimal 44-byte WAV header so a plain
@@ -2342,11 +2357,15 @@ function pcmToWavUrl(b64, sampleRate, channels, bitsPerSample){
   new Uint8Array(buffer,44).set(pcm);
   return URL.createObjectURL(new Blob([buffer], {type:'audio/wav'}));
 }
-// Speaks one question via the voice-tts edge function. Resolves once playback ends (or
-// immediately, leaving the caption text-only, if TTS fails/rate-limits) -- speech failing is
-// never allowed to block the rating flow, just its narration.
+// Speaks one question via the voice-tts edge function. If muted, skips the network call
+// entirely (no cost incurred, not just no sound) and immediately drops into listening-only.
+// Otherwise resolves once playback ends, is barged in on, or the safety-net timeout fires --
+// speech failing or being cut off is never allowed to block the rating flow, just its narration.
 function voiceSpeak(text){
-  if(!SUPA || !ME) return Promise.resolve();
+  if(!VOICE || VOICE.muted || !SUPA || !ME){
+    if(VOICE){ VOICE.speaking = false; renderVoiceStep(); }
+    return Promise.resolve();
+  }
   return SUPA.auth.getSession().then(function(res){
     var session = res.data && res.data.session;
     if(!session) throw new Error('not signed in');
@@ -2357,7 +2376,10 @@ function voiceSpeak(text){
     });
   }).then(function(r){ return r.json().catch(function(){ return {}; }).then(function(j){ return { ok:r.ok, j:j }; }); })
     .then(function(res){
-      if(!res.ok || !res.j.audio || !VOICE) return; // degrade to caption-only, silently
+      if(!res.ok || !res.j.audio || !VOICE || VOICE.muted){
+        if(VOICE){ VOICE.speaking = false; renderVoiceStep(); }
+        return;
+      }
       return new Promise(function(resolve){
         var url = pcmToWavUrl(res.j.audio, res.j.sampleRate, res.j.channels, res.j.bitsPerSample);
         var audio = new Audio(url);
@@ -2365,56 +2387,94 @@ function voiceSpeak(text){
         var done = false;
         // Safety net: some browsers/contexts can leave play() neither resolving nor firing
         // onended (silently blocked autoplay, a stalled decode, etc.) -- a spoken question must
-        // never be able to hang the whole rating flow, so force-advance after a generous cap
-        // (well over the ~2-6s a single question realistically takes to speak).
-        function finish(){ if(done) return; done = true; URL.revokeObjectURL(url); resolve(); }
+        // never be able to hang the whole rating flow, so force-advance after a generous cap.
+        function finish(){
+          if(done) return; done = true; URL.revokeObjectURL(url);
+          if(VOICE){ VOICE.speaking = false; VOICE.audio = null; renderVoiceStep(); }
+          resolve();
+        }
         audio.onended = finish; audio.onerror = finish;
         audio.play().catch(finish);
         setTimeout(finish, 12000);
       });
-    }).catch(function(){ /* degrade silently -- caption text is already on screen */ });
+    }).catch(function(){ if(VOICE){ VOICE.speaking = false; renderVoiceStep(); } });
 }
 
-// Starts live-transcribed listening for one question. Reuses the same SpeechRec engine as the
-// textarea mic buttons (toggleDictation), but standalone -- there's no textarea backing this,
-// just the on-screen caption/transcript -- and it recognizes a bare "skip" as its own command
-// instead of writing the word "skip" into the answer.
+// Starts live-transcribed listening for one question, immediately -- concurrently with
+// voiceSpeak's narration, not after it -- so the mic is "hot" the instant the question appears.
+// Reuses the same SpeechRec engine as the textarea mic buttons (toggleDictation), but standalone.
 function voiceListen(q){
   if(!VOICE) return;
   var rec = new SpeechRec();
   rec.lang = 'en-US'; rec.continuous = true; rec.interimResults = true;
   VOICE.rec = rec;
   var finalTxt = '';
-  renderVoiceStep(q.prompt, '', true, false);
   rec.onresult = function(ev){
     if(!VOICE) return;
+    // Barge-in: real speech arriving while the AI question is still being read out loud cuts it
+    // off immediately, same as talking over a person -- no button needed to interrupt.
+    if(VOICE.speaking){
+      VOICE.speaking = false;
+      if(VOICE.audio){ try{ VOICE.audio.pause(); }catch(_){} }
+    }
     var interim = '';
     for(var i=ev.resultIndex; i<ev.results.length; i++){
       var piece = ev.results[i][0].transcript;
       if(ev.results[i].isFinal) finalTxt += piece; else interim += piece;
     }
-    var shown = (finalTxt + ' ' + interim).trim();
-    renderVoiceStep(q.prompt, shown, true, false);
-    if(/^\s*skip\.?\s*$/i.test(shown)){ try{ rec.stop(); }catch(_){} voiceSkip(); }
+    VOICE.transcript = (finalTxt + ' ' + interim).trim();
+    renderVoiceStep();
+    if(/^\s*skip\.?\s*$/i.test(VOICE.transcript)){ try{ rec.stop(); }catch(_){} voiceSkip(); }
   };
   rec.onerror = function(){ try{ rec.stop(); }catch(_){} };
   rec.onend = function(){ if(VOICE && VOICE.rec===rec) VOICE.rec = null; };
-  try{ rec.start(); }catch(_){ voiceAdvance(); }
+  try{ rec.start(); }catch(_){ /* mic unavailable -- Skip/Done stay clickable as a fallback */ }
+}
+// Expands a spoken first name (or nickname-ish fragment) against the film's actual cast list --
+// "Denzel" said out loud becomes the real "Denzel Washington" credit, matching the same full
+// name the click-to-add cast chips already use, instead of leaving the bare transcript fragment
+// sitting in Standout Performance.
+function matchCastNamesInText(text, movie){
+  if(!text || !movie || !movie.credits || !movie.credits.cast) return text;
+  var lower = ' ' + text.toLowerCase() + ' ';
+  var matched = [], seen = {};
+  movie.credits.cast.forEach(function(c){
+    var full = c.name;
+    if(seen[full]) return;
+    var fullLower = full.toLowerCase();
+    var parts = fullLower.split(/\s+/).filter(function(p){ return p.length >= 3; });
+    var hit = lower.indexOf(' ' + fullLower + ' ') >= 0 || parts.some(function(p){
+      return new RegExp('(^|\\s)' + p.replace(/[^a-z0-9]/g, '') + '(\\s|$)', 'i').test(lower);
+    });
+    if(hit){ seen[full] = 1; matched.push(full); }
+  });
+  return matched.length ? matched.join(', ') : text;
 }
 function voiceFinalizeAnswer(){
   if(!VOICE) return;
   var q = VOICE_QUESTIONS[VOICE.idx];
-  var box = el('voiceModal') ? el('voiceModal').querySelector('.voice-transcript') : null;
-  var transcript = box ? box.textContent : '';
+  var transcript = (VOICE.transcript || '').trim();
   if(VOICE.rec){ try{ VOICE.rec.stop(); }catch(_){} }
-  var parsed = parseVoiceAnswer(q, (transcript||'').replace('Listening…','').trim());
+  if(VOICE.audio){ try{ VOICE.audio.pause(); }catch(_){} }
+  var parsed = parseVoiceAnswer(q, transcript);
+  if(parsed != null && q.field === 'fav_actor') parsed = matchCastNamesInText(parsed, VOICE.ctx.movie);
   if(parsed != null) VOICE.answers[q.field] = parsed;
   voiceAdvance();
 }
 function voiceSkip(){
   if(!VOICE) return;
   if(VOICE.rec){ try{ VOICE.rec.stop(); }catch(_){} }
+  if(VOICE.audio){ try{ VOICE.audio.pause(); }catch(_){} }
   voiceAdvance();
+}
+function voiceToggleMute(){
+  if(!VOICE) return;
+  VOICE.muted = !VOICE.muted;
+  if(VOICE.muted){
+    VOICE.speaking = false;
+    if(VOICE.audio){ try{ VOICE.audio.pause(); }catch(_){} }
+  }
+  renderVoiceStep();
 }
 function parseVoiceAnswer(q, text){
   if(!text) return null;
@@ -2436,7 +2496,7 @@ function parseVoiceAnswer(q, text){
     var m = t.match(/\d+/);
     return m ? parseInt(m[0], 10) : null;
   }
-  return text; // free-text fields: use the transcript as-is
+  return text; // free-text fields: use the transcript as-is (fav_actor gets cast-name-expanded above)
 }
 function finishVoiceRating(){
   var v = closeVoiceOverlay();
@@ -2444,6 +2504,16 @@ function finishVoiceRating(){
   track('voice_rating_completed', { answered: Object.keys(v.answers).length, total: VOICE_QUESTIONS.length });
   toast('Got it — review below', 'ok');
   openRatingForm(v.ctx, v.answers);
+}
+// Lets the manual rating form drop straight into Voice Rating too (not just the movie card),
+// e.g. to redo a field by voice after reviewing what the flow captured. Closing the manual form
+// first (with the usual unsaved-changes confirm) keeps the two modals from ever stacking.
+function switchToVoiceRating(){
+  if(!FORM) return;
+  if(formIsDirty() && !confirm('Discard unsaved changes and switch to Voice Rating?')) return;
+  var ctx = { title: FORM.title, year: FORM.year, movie: FORM.movie };
+  stopDictation(); closeModal();
+  openVoiceRating(ctx);
 }
 
 // Reverse-engineers the cast-chip click behavior: as the Standout performance text changes
@@ -2856,6 +2926,8 @@ document.addEventListener('click', function(ev){
   else if(action==='closevoice') attemptCloseVoice();
   else if(action==='voiceskip') voiceSkip();
   else if(action==='voicedone') voiceFinalizeAnswer();
+  else if(action==='voicemute') voiceToggleMute();
+  else if(action==='voicerateform') switchToVoiceRating();
   else if(action==='rate'){
     if(r && r.type==='ratemovie'){ var y=(r.movie.release_date||'').slice(0,4); openRatingForm({ title:r.movie.title, year:y?Number(y):null, movie:r.movie }); }
     else if(r) openRatingForm({ title:r.title, year:r.year });
