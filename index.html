@@ -49,6 +49,22 @@ label{font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:.0
 .searchrow{position:relative;display:flex;gap:8px}
 .hdr-search{flex:1;min-width:0;max-width:380px}
 @media(max-width:680px){.hrow{flex-wrap:wrap}.hdr-search{order:3;max-width:none;flex-basis:100%}}
+/* My Ratings grid on phones: switch each .rcard from a horizontal (poster-left/text-right) row
+   to a vertical poster-on-top tile -- same pattern as the search-results poster tiles -- and
+   shrink the grid's minmax so 2-3 cards fit per row instead of 1. Posters stay full-size and
+   fully visible; only the desktop-only horizontal layout is affected (this block only applies
+   under 640px, so the "great on my computer" desktop view is untouched). */
+@media(max-width:640px){
+  .rgrid{grid-template-columns:repeat(auto-fill,minmax(108px,1fr));gap:8px}
+  .rcard{position:relative;flex-direction:column;padding:0;gap:0;overflow:hidden}
+  .rcard .poster-thumb{width:100%;height:auto;aspect-ratio:2/3;border-radius:9px 9px 0 0}
+  .rcard .rcard-body{padding:6px 7px 8px}
+  .rcard .rt{font-size:12px;line-height:1.25;min-height:0;-webkit-line-clamp:2}
+  .rcard .ry{font-size:10.5px}
+  .rcard .rr{font-size:10.5px;margin-top:4px}
+  .rcard .rr .stars-line{letter-spacing:0}
+  .rcard .noteflag{position:absolute;top:6px;right:6px;float:none;background:#000a;border-radius:50%;width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:11px;z-index:2}
+}
 .ac{position:absolute;top:44px;left:0;right:0;background:var(--panel2);border:1px solid var(--line);border-radius:10px;z-index:40;overflow:hidden;box-shadow:0 12px 30px #000a}
 .ac-item{padding:10px 12px;cursor:pointer;display:flex;justify-content:space-between;gap:8px;border-bottom:1px solid #221e14}
 .ac-item:hover{background:#221e14}
@@ -1524,7 +1540,10 @@ function movieCardHTML(m){
   var ridx = ref({ type:'ratemovie', movie:m });
   var buttons = '<div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">';
   buttons += '<button class="btn btn-gold" data-action="rate" data-ref="' + ridx + '">' + (mine ? '✎ Edit My Rating' : '+ Add My Rating') + '</button>';
-  buttons += '<button class="btn btn-outline voice-rate-btn" data-action="voicerate" data-ref="' + ridx + '">🎤️ Rate by Voice<span class="voice-premium-tag">PREMIUM</span></button>';
+  // Voice Rating entry point paused for now (2026-07-29) -- the conversational TTS/STT rating
+  // flow is fully built (openVoiceRating() etc. below) but shelved pending more polish; re-enable
+  // by restoring this button. Per-textarea mic dictation buttons are unrelated and still active.
+  // buttons += '<button class="btn btn-outline voice-rate-btn" data-action="voicerate" data-ref="' + ridx + '">🎤️ Rate by Voice<span class="voice-premium-tag">PREMIUM</span></button>';
   if(!mine) buttons += watchlistToggleHTML(m.title, year, 'movie card');
   buttons += '</div>';
 
@@ -2046,7 +2065,9 @@ function renderRatingForm(keepVals){
     + '<div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap">'
     + '<button class="btn btn-gold" data-action="saverating">💾 Save</button>'
     + '<button class="btn btn-outline" data-action="refine">✨ Refine notes</button>'
-    + '<button class="btn btn-outline voice-rate-btn" data-action="voicerateform">🎤️ Speak to Rate<span class="voice-premium-tag">PREMIUM</span></button>'
+    // Voice Rating entry point paused for now (2026-07-29) -- see the matching note in
+    // movieCardHTML(). Restoring this line re-enables it here too.
+    // + '<button class="btn btn-outline voice-rate-btn" data-action="voicerateform">🎤️ Speak to Rate<span class="voice-premium-tag">PREMIUM</span></button>'
     + '<button class="btn" data-action="closemodal">Cancel</button>'
     + (FORM.existing ? '<button class="btn btn-red" data-action="deleterating" style="margin-left:auto">🗑 Delete review</button>' : '')
     + '</div>';
