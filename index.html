@@ -43,6 +43,7 @@ header{padding:14px 0 8px;border-bottom:1px solid var(--line);position:sticky;to
 .tab.on .count{background:#00000022}
 input[type=text],input[type=number],select,textarea{width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:8px;color:var(--txt);padding:9px 11px;font-size:15px;font-family:'DM Sans',sans-serif}
 input:focus,select:focus,textarea:focus{outline:none;border-color:var(--gold-dim)}
+input::placeholder,textarea::placeholder{color:var(--dim);opacity:.75}
 textarea{min-height:64px;resize:vertical}
 label{font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:.08em;display:block;margin:12px 0 4px}
 .searchrow{position:relative;display:flex;gap:8px}
@@ -2008,7 +2009,7 @@ function renderRatingForm(keepVals){
     + '<div><label>Rating</label><select id="rf_rating">' + ratingOpts(v('rating', e.rating) || 'Loved') + '</select></div>'
     + '<div><label>Would rewatch?</label><select id="rf_rewatch"><option' + ((v('rewatch', e.rewatch)||'Yes')==='Yes'?' selected':'') + '>Yes</option><option' + (v('rewatch', e.rewatch)==='No'?' selected':'') + '>No</option></select></div>'
     + '<div><label>Times seen</label><input type="number" id="rf_times" min="0" value="' + esc(v('times_seen', e.times_seen)) + '"></div>'
-    + '<div><label>First seen (year)</label><input type="number" id="rf_first" min="' + esc(FORM.year || '') + '" value="' + esc(v('first_seen_year', e.first_seen_year) || FORM.year || '') + '"></div>'
+    + '<div><label>First seen (year)</label><input type="number" id="rf_first" min="' + esc(FORM.year || '') + '"' + (v('first_seen_year', e.first_seen_year) ? (' value="' + esc(v('first_seen_year', e.first_seen_year)) + '"') : (FORM.year ? (' placeholder="' + esc(FORM.year) + '"') : '')) + '></div>'
     + '</div>'
     + taBlock('rf_vibe', 'What stuck with me', v('vibe', e.vibe), 'Vibe, what pulled you in, a favorite scene — whatever comes to mind')
     + taBlock('rf_actor', 'Standout performance', v('fav_actor', e.fav_actor)) + castChips
