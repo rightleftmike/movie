@@ -408,7 +408,7 @@ body.preauth header, body.preauth #appWrap{display:none!important}
     <label>AI credits (Suggest, Refine, Watch Tonight, film stills)</label>
     <div class="kv" id="aiPlanStatus">Checking…</div>
     <div id="upgradeBox" style="margin-top:8px;display:none">
-      <div class="supporter-note" style="margin-bottom:10px">This is a fan-built project and it stays free — <b>everyone gets 10 AI credits a week, forever</b>, no card needed.<br><br>Keeping it running isn't free, though: the AI, the database, the hosting, and everyone's free credits all land on one bill each month. <b>Supporters cover a share of it</b> — which is honestly what lets the free tier stay free for people who can't or don't want to chip in.<br><br>25 credits a week, no ads, nothing sold on.</div>
+      <div class="supporter-note" style="margin-bottom:10px">This is a fan project, and it stays free — <b>10 AI credits a week</b>, no card needed.<br><br>Running it costs me a bit every month. <b>Supporters cover that</b>, which keeps the free side free.<br><br>25 credits a week. No ads, nothing sold on.</div>
       <button class="btn btn-gold btn-sm" data-action="upgradeannual">♥ Support — $19.99/yr</button>
       <button class="btn btn-outline btn-sm" data-action="upgrademonthly" style="margin-left:6px">or $2.99/mo</button>
     </div>
@@ -681,7 +681,7 @@ function aiErrorHTML(e){
     return '<div class="paywall-card"><div class="paywall-overlay" style="margin:14px">'
       + '<div class="paywall-icon">\u23f3</div>'
       + '<div class="paywall-head">Today\u2019s shared credits are used up</div>'
-      + '<div class="paywall-sub">Everyone on the free tier draws from one daily pool that covers the real cost of running these features. It\u2019s been used up for today and refills tomorrow \u2014 supporters have their own credits and aren\u2019t affected.</div>'
+      + '<div class="paywall-sub">Free credits come out of a shared daily pool, and it\u2019s empty for today. It refills tomorrow. Supporters have their own, so they\u2019re not affected.</div>'
       + '<button class="btn btn-gold" style="margin-top:12px;width:100%;max-width:280px" data-action="upgradeannual">\u2665 Support \u2014 $19.99/yr</button>'
       + '<div style="margin-top:8px"><button class="btn" style="background:transparent;border:none;font-size:12px;color:var(--gold-dim);text-decoration:underline;padding:0" data-action="upgrademonthly">or $2.99/mo</button></div>'
       + '</div></div>';
@@ -692,7 +692,7 @@ function aiErrorHTML(e){
     return '<div class="paywall-card"><div class="paywall-overlay" style="margin:14px">'
       + '<div class="paywall-icon">\u2665</div>'
       + '<div class="paywall-head">That\u2019s all 25 credits this week</div>'
-      + '<div class="paywall-sub">Your credits reset ' + esc(creditResetLabel()) + '. Thanks for supporting the project \u2014 it genuinely is what pays for this.</div>'
+      + '<div class="paywall-sub">They reset ' + esc(creditResetLabel()) + '. Thanks for supporting this \u2014 it\u2019s what pays for it.</div>'
       + '</div></div>';
   }
   if(e.upgradeRequired){
@@ -710,7 +710,7 @@ function aiErrorHTML(e){
       + '<div class="paywall-overlay">'
       + '<div class="paywall-icon">⭐</div>'
       + '<div class="paywall-head">That\u2019s your 10 free credits for the week</div>'
-      + '<div class="paywall-sub">They reset ' + esc(creditResetLabel()) + ', and the free tier isn\u2019t going anywhere. If you want more now \u2014 25 a week \u2014 supporting the project helps cover the bill that keeps this running for everyone.</div>'
+      + '<div class="paywall-sub">They reset ' + esc(creditResetLabel()) + ' \u2014 the free tier isn\u2019t going anywhere. Supporters get 25 a week, and cover what it costs to run.</div>'
       + '<button class="btn btn-gold" style="margin-top:12px;width:100%;max-width:280px" data-action="upgradeannual">\u2665 Support \u2014 $19.99/yr</button>'
       + '<div style="margin-top:8px"><button class="btn" style="background:transparent;border:none;font-size:12px;color:var(--gold-dim);text-decoration:underline;padding:0" data-action="upgrademonthly">or $2.99/mo</button></div>'
       + '</div></div>';
