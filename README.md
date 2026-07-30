@@ -1,4 +1,11 @@
-# Rewatchables · Mikel — Cloud Edition
+# Rewatch Club — Cloud Edition
+
+> Rewatch Club is a fan-built, community-supported project and an unofficial companion for
+> **The Rewatchables** podcast. Not affiliated with, endorsed by, or sponsored by The Ringer
+> or Spotify. Film data from TMDB.
+>
+> (Renamed from "My Rewatchables" on 2026-07-29 — the product now has its own name and states
+> its relationship to the show explicitly rather than implying affiliation.)
 
 **Live app:** https://rightleftmike.github.io/movie/ (the old Supabase URL redirects here)
 **Hosting:** GitHub Pages, repo `rightleftmike/movie`. Update the app by pushing a new `index.html` to `main`.

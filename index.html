@@ -6,8 +6,8 @@
 <meta name="theme-color" content="#0b0a08">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="My Rewatchables">
-<title>My Rewatchables</title>
+<meta name="apple-mobile-web-app-title" content="Rewatch Club">
+<title>Rewatch Club</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:ital,wght@0,400;0,500;0,700;1,400&display=swap" rel="stylesheet">
@@ -265,6 +265,11 @@ body.preauth header, body.preauth #appWrap{display:none!important}
 .auth-sep{color:var(--dim);font-size:11px;letter-spacing:.14em;text-transform:uppercase;margin:16px 0 4px}
 .auth-msg{font-size:13px;margin-top:14px;min-height:18px}
 .auth-foot{color:var(--dim);font-size:11px;margin-top:18px;line-height:1.5}
+/* Persistent attribution/disclaimer. Deliberately quiet but always present: the name keeps a
+   foot in the show's naming neighbourhood, so stating the relationship plainly on every screen
+   is what keeps "companion built by a fan" from being mistaken for "official app". */
+.app-foot{color:var(--dim);font-size:10.5px;line-height:1.6;margin:34px auto 8px;max-width:620px;text-align:center;border-top:1px solid var(--line);padding-top:14px}
+.app-foot b{color:var(--dim);font-weight:600}
 [data-lucide]{width:1em;height:1em;stroke-width:1.75;vertical-align:-0.125em}
 .tab.on [data-lucide]{color:#171307}
 .tab [data-lucide]{color:var(--gold)}
@@ -313,7 +318,7 @@ body.preauth header, body.preauth #appWrap{display:none!important}
 <body class="preauth">
 <header><div class="wrap">
   <div class="hrow">
-    <div class="logo">My Rewatchables <small id="subTitle">Screening Room</small></div>
+    <div class="logo">Rewatch Club <small id="subTitle">Screening Room</small></div>
     <div class="searchrow hdr-search">
       <input type="text" id="q" placeholder="Search films, actors, directors…" autocomplete="off">
       <button class="btn btn-outline" data-action="dosearch">Go</button>
@@ -424,6 +429,12 @@ body.preauth header, body.preauth #appWrap{display:none!important}
     <p class="muted">Ratings live in the cloud database. Export a JSON copy any time as an extra backup.</p>
     <button class="btn btn-outline" style="margin-top:8px" data-action="export">⬇ Export ratings to JSON</button>
   </div>
+
+  <div class="app-foot">
+    Rewatch Club is a fan-built, community-supported project and an unofficial companion for
+    <b>The Rewatchables</b>. Not affiliated with, endorsed by, or sponsored by The Ringer or Spotify.
+    Film data from TMDB.
+  </div>
 </div>
 
 <div class="drawer-veil" id="drVeil" data-action="closedrawer"></div>
@@ -465,15 +476,15 @@ body.preauth header, body.preauth #appWrap{display:none!important}
 
 <div class="auth-gate" id="authGate">
   <div class="auth-card">
-    <h1>My Rewatchables</h1>
-    <div class="sub">Your personal Rewatchables screening room. Sign in to see your ratings, watchlist and follows.</div>
+    <h1>Rewatch Club</h1>
+    <div class="sub">A club for people who watch things twice. Sign in to keep your ratings, watchlist and follows.</div>
     <label>Email</label>
     <input type="text" id="authEmail" placeholder="you@example.com" autocomplete="email" inputmode="email">
     <button class="btn btn-gold" data-action="magiclink">✉️ Send me a magic link</button>
     <div class="auth-sep">or</div>
     <button class="btn gbtn" data-action="google">Continue with Google</button>
     <div class="auth-msg" id="authMsg"></div>
-    <div class="auth-foot">We'll email you a one-time sign-in link — no password to remember.</div>
+    <div class="auth-foot">We'll email you a one-time sign-in link — no password to remember.<br><br>An unofficial companion for <b>The Rewatchables</b>, built by listeners. Not affiliated with The Ringer or Spotify.</div>
   </div>
 </div>
 
@@ -3072,7 +3083,7 @@ function exportRatings(){
   var blob = new Blob([JSON.stringify({ exported:new Date().toISOString(), ratings:MY, watchlist:WL, followed_people:PEOPLE }, null, 2)], { type:'application/json' });
   var a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = 'rewatchables_backup_' + new Date().toISOString().slice(0,10) + '.json';
+  a.download = 'rewatch_club_backup_' + new Date().toISOString().slice(0,10) + '.json';
   a.click();
   toast('Backup downloaded', 'ok');
 }
