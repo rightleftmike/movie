@@ -270,6 +270,13 @@ body.preauth header, body.preauth #appWrap{display:none!important}
    is what keeps "companion built by a fan" from being mistaken for "official app". */
 .app-foot{color:var(--dim);font-size:10.5px;line-height:1.6;margin:34px auto 8px;max-width:620px;text-align:center;border-top:1px solid var(--line);padding-top:14px}
 .app-foot b{color:var(--dim);font-weight:600}
+.danger-zone{border:1px solid var(--red);border-radius:10px;padding:12px 14px;margin-top:12px}
+.danger-zone h4{margin:0 0 4px;color:var(--red);font-size:13px;letter-spacing:.03em;text-transform:uppercase}
+.btn-danger{background:transparent;border:1px solid var(--red);color:var(--red)}
+.btn-danger:hover{background:var(--red);color:#fff}
+.fb-box{width:100%;min-height:88px;resize:vertical}
+.settings-note{font-size:12px;color:var(--dim);line-height:1.6}
+.settings-note b{color:var(--txt)}
 [data-lucide]{width:1em;height:1em;stroke-width:1.75;vertical-align:-0.125em}
 .tab.on [data-lucide]{color:#171307}
 .tab [data-lucide]{color:var(--gold)}
@@ -425,9 +432,27 @@ body.preauth header, body.preauth #appWrap{display:none!important}
          since these DOM nodes no longer exist -- easy to re-surface later (e.g. behind a
          hidden admin view) without rebuilding any of that logic. -->
     <hr class="gold">
-    <h3>Backup</h3>
-    <p class="muted">Ratings live in the cloud database. Export a JSON copy any time as an extra backup.</p>
-    <button class="btn btn-outline" style="margin-top:8px" data-action="export">⬇ Export ratings to JSON</button>
+    <h3>Your data</h3>
+    <div class="settings-note"><b>Your ratings and notes belong to you.</b> Take a full copy whenever you like, and delete everything permanently whenever you like — no email, no asking, no waiting.</div>
+    <button class="btn btn-outline" style="margin-top:10px" data-action="export">⬇ Export everything to JSON</button>
+
+    <div class="danger-zone">
+      <h4>Delete everything</h4>
+      <div class="settings-note">Permanently removes your ratings, notes, watchlist, follows, taste profile and account. This cannot be undone, and there is no backup we can restore from — export first if you want a copy.</div>
+      <button class="btn btn-danger btn-sm" style="margin-top:10px" data-action="deleteaccount">Delete my account and all my data</button>
+      <div id="deleteBox" style="margin-top:8px"></div>
+    </div>
+
+    <hr class="gold">
+    <h3>How this is paid for</h3>
+    <div class="settings-note">Rewatch Club is free, and the AI features currently run on a <b>fixed pot of Google AI credit</b>. When that runs out — realistically within the next few months — <b>Suggest, Watch Tonight, note polishing and film stills may switch off</b>. Everything else, your ratings, notes, watchlist, follows and the episode list, keeps working regardless and stays free.<br><br>I'll keep the site running for as long as I can afford to. If you'd like to help it last longer, there's a popcorn button below — it buys nothing extra, it just helps.</div>
+
+    <hr class="gold">
+    <h3>Requests &amp; feedback</h3>
+    <div class="settings-note">Genuinely want to hear what's missing or annoying. It goes straight to me — no ticket system, no bot.</div>
+    <textarea id="fbMsg" class="fb-box" style="margin-top:10px" placeholder="What would make this better?"></textarea>
+    <button class="btn btn-outline btn-sm" style="margin-top:8px" data-action="sendfeedback">Send it</button>
+    <div id="fbMsgOut" class="settings-note" style="margin-top:6px"></div>
   </div>
 
   <div class="app-foot">
@@ -3079,6 +3104,68 @@ function refreshAiPlanFromCloud(){
     loadCreditStatus();
   }).catch(function(){ renderAiPlanStatus(); });
 }
+// ---- Feature requests / feedback. The table is write-only from the client (INSERT policy, no
+// SELECT policy), so nothing anyone submits can be read back by another user. ----
+function sendFeedback(){
+  var ta = el('fbMsg'), out = el('fbMsgOut');
+  if(!ta || !out) return;
+  var msg = (ta.value || '').trim();
+  if(!msg){ out.innerHTML = '<span style="color:var(--red)">Type something first.</span>'; return; }
+  if(!SUPA || !ME){ out.innerHTML = '<span style="color:var(--red)">Sign in to send feedback.</span>'; return; }
+  out.innerHTML = '<span class="spin"></span> Sending…';
+  SUPA.from('feedback').insert({ user_id: ME.id, message: msg.slice(0,4000) }).then(function(res){
+    if(res.error){ out.innerHTML = '<span style="color:var(--red)">Could not send: ' + esc(res.error.message) + '</span>'; return; }
+    ta.value = '';
+    out.innerHTML = '<span style="color:var(--green)">Got it — thank you. Genuinely read, every one.</span>';
+    track('feedback_sent', {});
+  }).catch(function(e){ out.innerHTML = '<span style="color:var(--red)">Could not send: ' + esc(e.message) + '</span>'; });
+}
+
+// ---- Account + data deletion. Irreversible, so it asks for the word DELETE to be typed rather
+// than relying on a single mis-clickable button. The actual work happens server-side in the
+// delete-my-data edge function -- this schema has no foreign keys, so nothing cascades and each
+// table has to be cleared explicitly by something holding the service role. ----
+function promptDeleteAccount(){
+  var box = el('deleteBox');
+  if(!box) return;
+  box.innerHTML = '<div class="settings-note" style="margin-top:8px">Type <b>DELETE</b> to confirm. This erases everything and closes your account immediately.</div>'
+    + '<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">'
+    + '<input type="text" id="delConfirm" placeholder="DELETE" autocomplete="off" style="max-width:160px">'
+    + '<button class="btn btn-danger btn-sm" data-action="deleteconfirm">Permanently delete</button>'
+    + '<button class="btn btn-outline btn-sm" data-action="deletecancel">Cancel</button>'
+    + '</div><div id="delOut" class="settings-note" style="margin-top:8px"></div>';
+}
+function cancelDeleteAccount(){ var b = el('deleteBox'); if(b) b.innerHTML = ''; }
+function confirmDeleteAccount(){
+  var inp = el('delConfirm'), out = el('delOut');
+  if(!inp || !out) return;
+  if((inp.value || '').trim().toUpperCase() !== 'DELETE'){
+    out.innerHTML = '<span style="color:var(--red)">Type DELETE exactly to confirm.</span>'; return;
+  }
+  if(!SUPA || !ME){ out.innerHTML = '<span style="color:var(--red)">Not signed in.</span>'; return; }
+  out.innerHTML = '<span class="spin"></span> Deleting everything…';
+  SUPA.auth.getSession().then(function(res){
+    var session = res.data && res.data.session;
+    if(!session) throw new Error('Not signed in');
+    return fetch(SB_URL + '/functions/v1/delete-my-data', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + session.access_token, 'content-type': 'application/json' },
+      body: JSON.stringify({ confirm: 'DELETE' })
+    });
+  }).then(function(r){
+    return r.json().catch(function(){ return {}; }).then(function(j){
+      if(!r.ok) throw new Error(j.error || ('Delete failed (' + r.status + ')'));
+      return j;
+    });
+  }).then(function(){
+    out.innerHTML = '<span style="color:var(--green)">Deleted. Signing you out…</span>';
+    setTimeout(function(){
+      SUPA.auth.signOut().then(function(){ location.reload(); }).catch(function(){ location.reload(); });
+    }, 1200);
+  }).catch(function(e){
+    out.innerHTML = '<span style="color:var(--red)">⚠️ ' + esc(e.message) + '</span>';
+  });
+}
 function exportRatings(){
   var blob = new Blob([JSON.stringify({ exported:new Date().toISOString(), ratings:MY, watchlist:WL, followed_people:PEOPLE }, null, 2)], { type:'application/json' });
   var a = document.createElement('a');
@@ -3172,6 +3259,10 @@ document.addEventListener('click', function(ev){
   else if(action==='suggest') runSuggest();
   else if(action==='tonight') watchTonight();
   else if(action==='export') exportRatings();
+  else if(action==='sendfeedback') sendFeedback();
+  else if(action==='deleteaccount') promptDeleteAccount();
+  else if(action==='deleteconfirm') confirmDeleteAccount();
+  else if(action==='deletecancel') cancelDeleteAccount();
   else if(action==='upgrademonthly') openUpgrade(STRIPE_LINK_MONTHLY);
   else if(action==='upgradeannual') openUpgrade(STRIPE_LINK_ANNUAL);
   else if(action==='magiclink') sendMagicLink();
