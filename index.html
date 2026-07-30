@@ -215,6 +215,15 @@ label{font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:.0
 .paywall-icon{font-size:26px}
 .paywall-head{font-family:'Bebas Neue',sans-serif;font-size:19px;color:var(--gold);margin-top:2px}
 .paywall-sub{font-size:12.5px;color:var(--dim);line-height:1.5;margin:6px auto 0;max-width:320px}
+/* Credit meter. The whole monetisation story is "credits cover the compute we actually pay for",
+   so the balance is shown plainly rather than hidden until you hit a wall -- a paywall you can see
+   coming reads as honest; one that ambushes you reads as a trap. */
+.credit-pill{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:var(--dim);border:1px solid var(--line);border-radius:999px;padding:4px 10px;margin-top:10px}
+.credit-pill b{color:var(--gold);font-weight:700}
+.credit-pill.low b{color:var(--red)}
+.credit-tag{font-size:9px;background:var(--gold);color:#1a1608;border-radius:4px;padding:1px 4px;margin-left:5px;vertical-align:1px;font-weight:700;letter-spacing:.03em}
+.supporter-note{font-size:12px;color:var(--dim);line-height:1.6}
+.supporter-note b{color:var(--txt)}
 /* Voice Rating (premium): full-screen conversational overlay -- Gemini TTS asks each rating-form
    field as a spoken question with captions, Web Speech API (same engine as the mic dictation
    buttons) live-transcribes the spoken answer, then the captured answers prefill the normal
@@ -350,6 +359,7 @@ body.preauth header, body.preauth #appWrap{display:none!important}
       <select id="sugLength"><option value="">Any length</option><option value="short">Under 90 min</option><option value="mid">90–120 min</option><option value="long">Over 120 min</option></select>
     </div>
     <button class="btn btn-gold" data-action="suggest" style="margin-top:10px">✨ Get suggestions</button>
+    <div id="creditPill"></div>
     <div id="sugOut"><div class="empty-state"><div class="ei">✨</div><div class="eh">Pick a mode above, then tap Get suggestions</div><div class="es">Suggestions are tailored to your ratings and notes -- the more you rate, the better they get.</div></div></div>
   </div>
 
@@ -395,12 +405,12 @@ body.preauth header, body.preauth #appWrap{display:none!important}
     <div style="display:flex;gap:8px"><input type="text" id="setName" placeholder="Your name"><button class="btn btn-outline" data-action="savename">Save</button></div>
     <button class="btn btn-outline btn-sm" data-action="signout" style="margin-top:10px">Sign out</button>
     <hr class="gold">
-    <label>AI features (Suggest, Refine, Watch Tonight)</label>
+    <label>AI credits (Suggest, Refine, Watch Tonight, film stills)</label>
     <div class="kv" id="aiPlanStatus">Checking…</div>
     <div id="upgradeBox" style="margin-top:8px;display:none">
-      <div class="muted" style="font-size:12.5px;line-height:1.55;margin-bottom:8px">Upgrading gets you: a much higher daily AI limit (100/day vs 20/day on the trial), ✨ <b>Suggest</b> — picks tailored to your actual ratings and notes, ✎ <b>Refine notes</b> — AI-polished versions of your rough thoughts, and 🍿 <b>Watch Tonight</b> — one pick, weighed for the time and day.</div>
-      <button class="btn btn-gold btn-sm" data-action="upgrademonthly">⭐ Upgrade — $2.99/mo</button>
-      <button class="btn btn-outline btn-sm" data-action="upgradeannual" style="margin-left:6px">⭐ Upgrade — $19.99/yr</button>
+      <div class="supporter-note" style="margin-bottom:10px">This is a fan-built project, and it stays free — <b>everyone gets 10 AI credits a week, forever</b>, no card needed. But the AI features aren't free to run: each request costs real money to Google (and a search provider for film stills). Roughly a third of a penny a go — small alone, not small at scale.<br><br>If the app has earned it, becoming a <b>supporter</b> raises you to 25 credits a week and helps keep the lights on for everyone. No ads, nothing sold on, and the free tier never shrinks.</div>
+      <button class="btn btn-gold btn-sm" data-action="upgradeannual">♥ Support — $19.99/yr</button>
+      <button class="btn btn-outline btn-sm" data-action="upgrademonthly" style="margin-left:6px">or $2.99/mo</button>
     </div>
     <!-- Supabase connection status, episode-list-source status + TMDB title audit tool, and
          podcast-link click stats used to render here -- all internal/debugging info with no
@@ -491,11 +501,16 @@ var SUPA = (window.supabase && window.supabase.createClient)
   ? window.supabase.createClient(SB_URL, SB_KEY, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } })
   : null;
 var ME = null, PROFILE = null, BOOTED = false;
+// Cached result of my_ai_credit_status(). Server-side reserve_ai_credit() is the only real
+// enforcement -- this is purely so the UI can show a balance and warn before a wall is hit.
+var CREDITS = null;
 var SHEET_ID = '13KsNb1SxA7DYYQAzhaYxj_qKX0PXV1PXyKAZ7cEapRc';
 var SHEET_TAB = 'episode list';
 var TMDB_DEFAULT = '9f6a7cc8ad0b39dcb6381c44a16761cc';
 var IMG = 'https://image.tmdb.org/t/p/';
-var TRIAL_DAYS = 3;
+// (TRIAL_DAYS removed 2026-07-29: there is no trial any more. Free access is a permanent weekly
+// credit allowance, so nothing counts down from signup. profiles.trial_ends_at is likewise unused
+// -- the column is left in place rather than dropped, since old rows still carry values.)
 // Stripe Payment Links — filled in once the Stripe product/prices exist.
 var STRIPE_LINK_MONTHLY = 'https://buy.stripe.com/bJe00jgve6DH63P1n60oM02';
 var STRIPE_LINK_ANNUAL = 'https://buy.stripe.com/8x2dR9fra4vz0Jv4zi0oM03';
@@ -658,6 +673,28 @@ function aiThinkingHTML(kind){
   return '<div class="ai-thinking"><div class="ai-thinking-icon">✨</div><div class="ai-thinking-text" id="' + id + '">' + esc(msgs[0]) + '</div></div>';
 }
 function aiErrorHTML(e){
+  // The shared-pool case is NOT a paywall and must not look like one: the user did nothing wrong
+  // and buying something is not the only way out (waiting until tomorrow also works). Give it its
+  // own honest explanation, with supporting offered as a way to help rather than a toll.
+  if(e.reason === 'free_pool_exhausted'){
+    track('paywall_viewed', { trigger: 'free_pool_exhausted' });
+    return '<div class="paywall-card"><div class="paywall-overlay" style="margin:14px">'
+      + '<div class="paywall-icon">\u23f3</div>'
+      + '<div class="paywall-head">Today\u2019s shared credits are used up</div>'
+      + '<div class="paywall-sub">Everyone on the free tier draws from one daily pool that covers the real cost of running these features. It\u2019s been used up for today and refills tomorrow \u2014 supporters have their own credits and aren\u2019t affected.</div>'
+      + '<button class="btn btn-gold" style="margin-top:12px;width:100%;max-width:280px" data-action="upgradeannual">\u2665 Support \u2014 $19.99/yr</button>'
+      + '<div style="margin-top:8px"><button class="btn" style="background:transparent;border:none;font-size:12px;color:var(--gold-dim);text-decoration:underline;padding:0" data-action="upgrademonthly">or $2.99/mo</button></div>'
+      + '</div></div>';
+  }
+  // A supporter who has genuinely used all 25 has nothing to buy -- selling to them here would be
+  // insulting. Just tell them when it resets.
+  if(e.reason === 'weekly_exhausted' && CREDITS && CREDITS.is_paid){
+    return '<div class="paywall-card"><div class="paywall-overlay" style="margin:14px">'
+      + '<div class="paywall-icon">\u2665</div>'
+      + '<div class="paywall-head">That\u2019s all 25 credits this week</div>'
+      + '<div class="paywall-sub">Your credits reset Monday. Thanks for supporting the project \u2014 it genuinely is what pays for this.</div>'
+      + '</div></div>';
+  }
   if(e.upgradeRequired){
     track('paywall_viewed', { trigger: 'ai_limit' });
     // This is the actual conversion moment (trial ended / daily cap hit), so it gets a real
@@ -672,16 +709,16 @@ function aiErrorHTML(e){
       + '</div>'
       + '<div class="paywall-overlay">'
       + '<div class="paywall-icon">⭐</div>'
-      + '<div class="paywall-head">' + esc(e.message) + '</div>'
-      + '<div class="paywall-sub">Upgrade for a much higher daily AI limit, tailored Suggest picks, note polishing, and a nightly Watch Tonight pick.</div>'
-      + '<button class="btn btn-gold" style="margin-top:12px;width:100%;max-width:280px" data-action="upgradeannual">⭐ Upgrade — $19.99/yr</button>'
+      + '<div class="paywall-head">That\u2019s your 10 free credits for the week</div>'
+      + '<div class="paywall-sub">They reset Monday, and the free tier isn\u2019t going anywhere. If you want more now \u2014 25 a week \u2014 supporting the project covers what these requests actually cost to run.</div>'
+      + '<button class="btn btn-gold" style="margin-top:12px;width:100%;max-width:280px" data-action="upgradeannual">\u2665 Support \u2014 $19.99/yr</button>'
       + '<div style="margin-top:8px"><button class="btn" style="background:transparent;border:none;font-size:12px;color:var(--gold-dim);text-decoration:underline;padding:0" data-action="upgrademonthly">or $2.99/mo</button></div>'
       + '</div></div>';
   }
   return '<p style="color:var(--red);margin-top:10px">⚠️ ' + esc(e.message) + '</p>';
 }
 function openUpgrade(url){
-  if(!url){ toast('Upgrade link not set up yet — check back soon', 'err'); return; }
+  if(!url){ toast('Support link not set up yet — check back soon', 'err'); return; }
   if(!ME){ toast('Sign in first', 'err'); return; }
   track('checkout_started', { plan: url===STRIPE_LINK_ANNUAL ? 'annual' : 'monthly' });
   // client_reference_id is how the stripe-webhook function matches a completed checkout back
@@ -690,30 +727,71 @@ function openUpgrade(url){
   var full = url + sep + 'client_reference_id=' + encodeURIComponent(ME.id) + (ME.email ? '&prefilled_email=' + encodeURIComponent(ME.email) : '');
   window.open(full, '_blank', 'noopener');
 }
+// Reads the server's view of the caller's credits. my_ai_credit_status() is SECURITY DEFINER and
+// scoped to auth.uid(), so it's safe to call straight from the client.
+function loadCreditStatus(){
+  if(!SUPA || !ME) { CREDITS = null; renderCreditPill(); return Promise.resolve(null); }
+  return SUPA.rpc('my_ai_credit_status').then(function(res){
+    if(res.error || !res.data || !res.data.length){ return null; }
+    var r = Array.isArray(res.data) ? res.data[0] : res.data;
+    CREDITS = {
+      is_paid: !!r.is_paid,
+      used: r.used_this_week,
+      cap: r.weekly_cap,
+      remaining: r.remaining,
+      resets_at: r.week_resets_at,
+      free_pool_exhausted: !!r.free_pool_exhausted
+    };
+    renderCreditPill();
+    renderAiPlanStatus();
+    return CREDITS;
+  }).catch(function(){ return null; });
+}
+function creditResetLabel(){
+  if(!CREDITS || !CREDITS.resets_at) return 'Monday';
+  try {
+    return new Date(CREDITS.resets_at).toLocaleDateString(undefined, { weekday:'long' });
+  } catch(_){ return 'Monday'; }
+}
+function renderCreditPill(){
+  var box = el('creditPill');
+  if(!box) return;
+  if(!CREDITS){ box.innerHTML = ''; return; }
+  if(CREDITS.free_pool_exhausted){
+    box.innerHTML = '<span class="credit-pill low">\u23f3 Shared free credits are used up for today \u2014 they refill tomorrow</span>';
+    return;
+  }
+  var low = CREDITS.remaining <= 2;
+  box.innerHTML = '<span class="credit-pill' + (low ? ' low' : '') + '">\u2728 <b>' + CREDITS.remaining + '</b> of ' + CREDITS.cap
+    + ' AI credits left this week \u00b7 resets ' + esc(creditResetLabel()) + '</span>';
+}
 function renderAiPlanStatus(){
   var box = el('aiPlanStatus'), upBox = el('upgradeBox');
   if(!box || !SUPA) return;
-  if(!PROFILE){ box.textContent = 'Sign in to see your AI plan.'; if(upBox) upBox.style.display = 'none'; return; }
+  if(!PROFILE){ box.textContent = 'Sign in to see your AI credits.'; if(upBox) upBox.style.display = 'none'; return; }
+
+  // There is no trial any more -- free access is permanent and weekly, so this reports a BALANCE
+  // rather than a countdown to being locked out. (The old 3-day-trial branch was removed with the
+  // credit system; TRIAL_DAYS and profiles.trial_ends_at are now unused.)
+  var cap  = CREDITS ? CREDITS.cap  : (PROFILE.plan === 'paid' ? 25 : 10);
+  var left = CREDITS ? CREDITS.remaining : null;
+  var bal  = (left == null)
+    ? esc(String(cap)) + ' credits a week'
+    : '<b>' + left + '</b> of ' + cap + ' credits left this week · resets ' + esc(creditResetLabel());
+
   if(PROFILE.plan === 'paid'){
     var renews = PROFILE.plan_renews_at ? new Date(PROFILE.plan_renews_at).toLocaleDateString() : '';
     var status = PROFILE.subscription_status && PROFILE.subscription_status !== 'active'
       ? ' <span style="color:var(--red)">(' + esc(PROFILE.subscription_status) + ')</span>' : '';
-    box.innerHTML = '<span style="color:var(--green)">● Paid plan</span>' + (renews ? ' — renews ' + esc(renews) : '') + status;
+    box.innerHTML = '<span style="color:var(--green)">♥ Supporter</span> — ' + bal
+      + (renews ? ' · renews ' + esc(renews) : '') + status;
     if(upBox) upBox.style.display = 'none';
     return;
   }
   if(upBox) upBox.style.display = 'block';
-  // Trial is time-based (TRIAL_DAYS from signup) — trial_ends_at comes straight off the profile
-  // row we already have, so no extra round-trip is needed to render this.
-  var trialEnd = PROFILE.trial_ends_at ? new Date(PROFILE.trial_ends_at)
-    : new Date(new Date(PROFILE.created_at).getTime() + TRIAL_DAYS*24*60*60*1000);
-  var msLeft = trialEnd - new Date();
-  if(msLeft <= 0){
-    box.innerHTML = '<span style="color:var(--red)">Free trial ended</span> — upgrade to keep using AI features';
-    return;
-  }
-  var daysLeft = Math.max(1, Math.ceil(msLeft / (24*60*60*1000)));
-  box.textContent = 'Free trial — ' + daysLeft + ' day' + (daysLeft===1?'':'s') + ' left';
+  var poolNote = (CREDITS && CREDITS.free_pool_exhausted)
+    ? ' <span style="color:var(--red)">· shared pool empty until tomorrow</span>' : '';
+  box.innerHTML = '<span style="color:var(--green)">● Free</span> — ' + bal + poolNote;
 }
 
 /* ================= LOOKUPS ================= */
@@ -844,6 +922,7 @@ function enterApp(){
   renderUserBox();
   setSubtitle();
   renderAiPlanStatus();
+  loadCreditStatus();
   initNav();
   if(!BOOTED){ BOOTED = true; loadCloud(); loadSheet(); }
 }
@@ -1139,9 +1218,14 @@ function askClaude(prompt, maxTokens, feature){
     return r.json().catch(function(){ return {}; }).then(function(j){
       if(!r.ok){
         var err = new Error(j.error || ('AI proxy error ' + r.status));
-        err.upgradeRequired = !!j.upgrade_required;
+        // reason distinguishes "you're out" from "the shared free pool is out" -- very different
+        // messages. upgradeRequired kept as an alias so any older call site still behaves.
+        err.reason = j.reason || null;
+        err.credits = j.credits || null;
+        err.upgradeRequired = !!(j.supporter_cta || j.upgrade_required);
         throw err;
       }
+      if(j.credits) { CREDITS = Object.assign({}, CREDITS || {}, j.credits); renderCreditPill(); }
       return j.text || '';
     });
   });
@@ -1543,7 +1627,7 @@ function movieCardHTML(m){
     var pidx2 = ref({ type:'charphoto', personId:c.id, movieId:m.id, actor:c.name, character:c.character||'', title:m.title, year:year?Number(year):null });
     castHtml += '<div class="cast-card" data-action="person" data-ref="' + cidx + '"' + (followedC?' title="Following"':'') + '>'
       + '<span class="age-btn" data-action="ageinfo" data-ref="' + aidx + '" title="Free: public/press photos of ' + esc(c.name) + ' over the years">i</span>'
-      + '<span class="photo-btn" data-action="charphoto" data-ref="' + pidx2 + '" title="Premium: ' + esc(c.name) + (c.character ? ' as ' + esc(c.character) : '') + ' in ' + esc(m.title) + '">🎬</span>'
+      + '<span class="photo-btn" data-action="charphoto" data-ref="' + pidx2 + '" title="Find ' + esc(c.name) + (c.character ? ' as ' + esc(c.character) : '') + ' in ' + esc(m.title) + ' \u2014 uses 1 AI credit (free once someone\u2019s looked it up)">🎬</span>'
       + img + '<div class="cn">' + esc(c.name) + '</div><div class="cc">' + esc(c.character||'') + '</div></div>';
   }
 
@@ -1617,9 +1701,12 @@ function fetchCharacterPhotos(personId, movieId, actor, character, title, year){
     return r.json().catch(function(){ return {}; }).then(function(j){
       if(!r.ok){
         var err = new Error(j.error || ('Character photo search error ' + r.status));
-        err.upgradeRequired = !!j.upgrade_required;
+        err.reason = j.reason || null;
+        err.credits = j.credits || null;
+        err.upgradeRequired = !!(j.supporter_cta || j.upgrade_required);
         throw err;
       }
+      if(j.credits) { CREDITS = Object.assign({}, CREDITS || {}, j.credits); renderCreditPill(); }
       return j;
     });
   });
@@ -1643,9 +1730,11 @@ function showCharacterPhoto(personId, movieId, actor, character, title, year){
   }).catch(function(e){
     var box = el('charPhotoBox');
     if(!box) return;
-    if(e.upgradeRequired){
-      box.innerHTML = '<p style="font-size:12px;line-height:1.5">⭐ Character photos is a premium feature.</p>'
-        + '<button class="btn btn-gold btn-sm" data-action="upgrademonthly" style="margin-top:6px">⭐ Upgrade — $2.99/mo</button>';
+    if(e.reason === 'free_pool_exhausted'){
+      box.innerHTML = '<p style="font-size:12px;line-height:1.5">\u23f3 The shared free AI credits are used up for today \u2014 they refill tomorrow.</p>';
+    } else if(e.reason === 'weekly_exhausted'){
+      box.innerHTML = '<p style="font-size:12px;line-height:1.5">You\u2019ve used all your AI credits this week \u2014 they reset ' + esc(creditResetLabel()) + '.</p>'
+        + (CREDITS && CREDITS.is_paid ? '' : '<button class="btn btn-gold btn-sm" data-action="upgradeannual" style="margin-top:6px">\u2665 Support \u2014 $19.99/yr</button>');
     } else {
       box.innerHTML = '<p style="color:var(--red);font-size:12px">⚠️ ' + esc(e.message) + '</p>';
     }
@@ -2360,10 +2449,10 @@ function voicePaywallHTML(){
     + '<div class="paywall-preview"><div class="suggestion"><div class="st">🎤 Voice Rating</div>'
     + '<p style="font-size:13.5px;margin:6px 0">Rate a film through a spoken conversation instead of typing…</p></div></div>'
     + '<div class="paywall-overlay">'
-    + '<div class="paywall-icon">⭐</div>'
-    + '<div class="paywall-head">Voice Rating is a Premium feature</div>'
-    + '<div class="paywall-sub">Upgrade to have a spoken conversation walk you through rating a film — rating, rewatch, and your notes, all by voice.</div>'
-    + '<button class="btn btn-gold" style="margin-top:12px;width:100%;max-width:280px" data-action="upgradeannual">⭐ Upgrade — $19.99/yr</button>'
+    + '<div class="paywall-icon">\u2665</div>'
+    + '<div class="paywall-head">Voice Rating is a supporter feature</div>'
+    + '<div class="paywall-sub">A spoken conversation walks you through rating a film \u2014 rating, rewatch, and your notes, all by voice. It asks each question out loud, which is the most expensive thing the app does per use, so it sits with the supporter tier.</div>'
+    + '<button class="btn btn-gold" style="margin-top:12px;width:100%;max-width:280px" data-action="upgradeannual">\u2665 Support \u2014 $19.99/yr</button>'
     + '<div style="margin-top:8px"><button class="btn" style="background:transparent;border:none;font-size:12px;color:var(--gold-dim);text-decoration:underline;padding:0" data-action="upgrademonthly">or $2.99/mo</button></div>'
     + '</div></div>';
 }
@@ -2976,6 +3065,7 @@ function refreshAiPlanFromCloud(){
   SUPA.from('profiles').select('*').eq('id', ME.id).maybeSingle().then(function(res){
     if(!res.error && res.data) PROFILE = res.data;
     renderAiPlanStatus();
+    loadCreditStatus();
   }).catch(function(){ renderAiPlanStatus(); });
 }
 function exportRatings(){
