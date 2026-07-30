@@ -1540,7 +1540,7 @@ function movieCardHTML(m){
     var ring = followedC ? ' followed-ring' : '';
     var img = c.profile_path ? '<img class="' + ring.trim() + '" src="' + IMG + 'w185' + c.profile_path + '">' : '<div class="cast-noimg' + ring + '">🎭</div>';
     var aidx = ref({ type:'ageinfo', id:c.id, name:c.name, movieYear:year?Number(year):null });
-    var pidx2 = ref({ type:'charphoto', actor:c.name, character:c.character||'', title:m.title, year:year?Number(year):null });
+    var pidx2 = ref({ type:'charphoto', personId:c.id, movieId:m.id, actor:c.name, character:c.character||'', title:m.title, year:year?Number(year):null });
     castHtml += '<div class="cast-card" data-action="person" data-ref="' + cidx + '"' + (followedC?' title="Following"':'') + '>'
       + '<span class="age-btn" data-action="ageinfo" data-ref="' + aidx + '" title="Age + photos around ' + esc(year||'') + '">i</span>'
       + '<span class="photo-btn" data-action="charphoto" data-ref="' + pidx2 + '" title="Find a photo of ' + esc(c.name) + (c.character ? ' as ' + esc(c.character) : '') + '">🎬</span>'
@@ -1603,7 +1603,7 @@ function closeAgeInfo(){ el('ageVeil').classList.remove('open'); }
 // profile photos nor the Wikimedia career-photos feature above can give you (those are photos OF
 // the actor, not in-character stills). Paid-only; each search costs real money server-side, so
 // there's no client-side caching bypass -- every click is a real, capped request. ----
-function fetchCharacterPhotos(actor, character, title, year){
+function fetchCharacterPhotos(personId, movieId, actor, character, title, year){
   if(!SUPA || !ME) return Promise.reject(new Error('Not signed in'));
   return SUPA.auth.getSession().then(function(res){
     var session = res.data && res.data.session;
@@ -1611,7 +1611,7 @@ function fetchCharacterPhotos(actor, character, title, year){
     return fetch(SB_URL + '/functions/v1/character-photos', {
       method: 'POST',
       headers: { 'Authorization': 'Bearer ' + session.access_token, 'content-type': 'application/json' },
-      body: JSON.stringify({ actor: actor, character: character || '', title: title, year: year || null })
+      body: JSON.stringify({ personId: personId, movieId: movieId, actor: actor, character: character || '', title: title, year: year || null })
     });
   }).then(function(r){
     return r.json().catch(function(){ return {}; }).then(function(j){
@@ -1624,13 +1624,13 @@ function fetchCharacterPhotos(actor, character, title, year){
     });
   });
 }
-function showCharacterPhoto(actor, character, title, year){
+function showCharacterPhoto(personId, movieId, actor, character, title, year){
   el('ageModal').innerHTML = '<button class="modal-x" data-action="closeage" title="Close">✕</button>'
     + '<h3 style="margin-top:0">' + esc(actor) + (character ? ' as ' + esc(character) : '') + '</h3>'
     + '<p class="muted" style="margin-top:2px;font-size:12px">' + esc(title) + (year ? ' (' + esc(year) + ')' : '') + '</p>'
     + '<div id="charPhotoBox" style="margin-top:8px"><p class="muted" style="font-size:12px"><span class="spin"></span> Searching…</p></div>';
   el('ageVeil').classList.add('open');
-  fetchCharacterPhotos(actor, character, title, year).then(function(res){
+  fetchCharacterPhotos(personId, movieId, actor, character, title, year).then(function(res){
     var box = el('charPhotoBox');
     if(!box) return;
     if(!res.photos || !res.photos.length){ box.innerHTML = '<p class="muted" style="font-size:12px">No photos found.</p>'; return; }
@@ -3010,7 +3010,7 @@ document.addEventListener('click', function(ev){
   else if(action==='closedrawer') closeDrawer();
   else if(action==='closemodal') attemptCloseModal();
   else if(action==='ageinfo'){ if(r) showAgeInfo(r.id, r.name, r.movieYear); }
-  else if(action==='charphoto'){ if(r) showCharacterPhoto(r.actor, r.character, r.title, r.year); }
+  else if(action==='charphoto'){ if(r) showCharacterPhoto(r.personId, r.movieId, r.actor, r.character, r.title, r.year); }
   else if(action==='closeage') closeAgeInfo();
   else if(action==='viewphoto'){ if(r) openLightbox(r.url); }
   else if(action==='closelightbox') closeLightbox();
