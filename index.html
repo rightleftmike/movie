@@ -1542,8 +1542,8 @@ function movieCardHTML(m){
     var aidx = ref({ type:'ageinfo', id:c.id, name:c.name, movieYear:year?Number(year):null });
     var pidx2 = ref({ type:'charphoto', personId:c.id, movieId:m.id, actor:c.name, character:c.character||'', title:m.title, year:year?Number(year):null });
     castHtml += '<div class="cast-card" data-action="person" data-ref="' + cidx + '"' + (followedC?' title="Following"':'') + '>'
-      + '<span class="age-btn" data-action="ageinfo" data-ref="' + aidx + '" title="Age + photos around ' + esc(year||'') + '">i</span>'
-      + '<span class="photo-btn" data-action="charphoto" data-ref="' + pidx2 + '" title="Find a photo of ' + esc(c.name) + (c.character ? ' as ' + esc(c.character) : '') + '">🎬</span>'
+      + '<span class="age-btn" data-action="ageinfo" data-ref="' + aidx + '" title="Free: public/press photos of ' + esc(c.name) + ' over the years">i</span>'
+      + '<span class="photo-btn" data-action="charphoto" data-ref="' + pidx2 + '" title="Premium: ' + esc(c.name) + (c.character ? ' as ' + esc(c.character) : '') + ' in ' + esc(m.title) + '">🎬</span>'
       + img + '<div class="cn">' + esc(c.name) + '</div><div class="cc">' + esc(c.character||'') + '</div></div>';
   }
 
