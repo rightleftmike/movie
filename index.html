@@ -83,6 +83,8 @@ label{font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:.0
 .cast-card{flex:0 0 72px;text-align:center;cursor:pointer;position:relative}
 .age-btn{position:absolute;top:0;right:2px;background:var(--panel);border:1px solid var(--gold-dim);color:var(--gold);width:18px;height:18px;border-radius:50%;font-size:11px;line-height:16px;cursor:pointer;font-style:italic;font-weight:700}
 .age-btn:hover{background:var(--gold);color:#171307}
+.photo-btn{position:absolute;top:0;left:2px;background:var(--panel);border:1px solid var(--gold-dim);width:18px;height:18px;border-radius:50%;font-size:10px;line-height:17px;cursor:pointer}
+.photo-btn:hover{background:var(--gold)}
 .cast-card img{width:64px;height:64px;border-radius:50%;object-fit:cover;border:1px solid var(--line)}
 .cast-card .cn{font-size:11px;margin-top:3px;line-height:1.2}
 .cast-card .cc{font-size:10px;color:var(--dim);line-height:1.2}
@@ -314,8 +316,8 @@ body.preauth header, body.preauth #appWrap{display:none!important}
     <div class="tab" data-action="tab" data-tab="show"><i data-lucide="clapperboard"></i> Show List <span class="count" id="cShow">0</span></div>
     <div class="tab on" data-action="tab" data-tab="ratings"><i data-lucide="star"></i> My Ratings <span class="count" id="cRatings">0</span></div>
     <div class="tab" data-action="tab" data-tab="suggest"><i data-lucide="sparkles"></i> Suggest</div>
-    <div class="tab" data-action="tab" data-tab="watchlist"><i data-lucide="bookmark"></i> Watchlist <span class="count" id="cWl">0</span></div>
     <div class="tab" data-action="tab" data-tab="people"><i data-lucide="users"></i> Following <span class="count" id="cPeople">0</span></div>
+    <div class="tab" data-action="tab" data-tab="watchlist"><i data-lucide="bookmark"></i> Watchlist <span class="count" id="cWl">0</span></div>
     <div class="tab" data-action="tab" data-tab="settings"><i data-lucide="settings"></i></div>
   </div>
 </div></header>
@@ -1538,8 +1540,10 @@ function movieCardHTML(m){
     var ring = followedC ? ' followed-ring' : '';
     var img = c.profile_path ? '<img class="' + ring.trim() + '" src="' + IMG + 'w185' + c.profile_path + '">' : '<div class="cast-noimg' + ring + '">🎭</div>';
     var aidx = ref({ type:'ageinfo', id:c.id, name:c.name, movieYear:year?Number(year):null });
+    var pidx2 = ref({ type:'charphoto', actor:c.name, character:c.character||'', title:m.title, year:year?Number(year):null });
     castHtml += '<div class="cast-card" data-action="person" data-ref="' + cidx + '"' + (followedC?' title="Following"':'') + '>'
       + '<span class="age-btn" data-action="ageinfo" data-ref="' + aidx + '" title="Age + photos around ' + esc(year||'') + '">i</span>'
+      + '<span class="photo-btn" data-action="charphoto" data-ref="' + pidx2 + '" title="Find a photo of ' + esc(c.name) + (c.character ? ' as ' + esc(c.character) : '') + '">🎬</span>'
       + img + '<div class="cn">' + esc(c.name) + '</div><div class="cc">' + esc(c.character||'') + '</div></div>';
   }
 
@@ -1594,6 +1598,59 @@ function movieCardHTML(m){
    figures, so most cast members will fall back to their regular TMDB gallery photos, clearly
    labeled as not era-specific rather than implying they are. */
 function closeAgeInfo(){ el('ageVeil').classList.remove('open'); }
+// ---- Character stills (restored 2026-07-29): Google Image search (via Serper, server-side) for
+// an actor IN a specific role -- e.g. "Keanu Reeves as Neo in The Matrix" -- which neither TMDB
+// profile photos nor the Wikimedia career-photos feature above can give you (those are photos OF
+// the actor, not in-character stills). Paid-only; each search costs real money server-side, so
+// there's no client-side caching bypass -- every click is a real, capped request. ----
+function fetchCharacterPhotos(actor, character, title, year){
+  if(!SUPA || !ME) return Promise.reject(new Error('Not signed in'));
+  return SUPA.auth.getSession().then(function(res){
+    var session = res.data && res.data.session;
+    if(!session) throw new Error('Not signed in');
+    return fetch(SB_URL + '/functions/v1/character-photos', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + session.access_token, 'content-type': 'application/json' },
+      body: JSON.stringify({ actor: actor, character: character || '', title: title, year: year || null })
+    });
+  }).then(function(r){
+    return r.json().catch(function(){ return {}; }).then(function(j){
+      if(!r.ok){
+        var err = new Error(j.error || ('Character photo search error ' + r.status));
+        err.upgradeRequired = !!j.upgrade_required;
+        throw err;
+      }
+      return j;
+    });
+  });
+}
+function showCharacterPhoto(actor, character, title, year){
+  el('ageModal').innerHTML = '<button class="modal-x" data-action="closeage" title="Close">✕</button>'
+    + '<h3 style="margin-top:0">' + esc(actor) + (character ? ' as ' + esc(character) : '') + '</h3>'
+    + '<p class="muted" style="margin-top:2px;font-size:12px">' + esc(title) + (year ? ' (' + esc(year) + ')' : '') + '</p>'
+    + '<div id="charPhotoBox" style="margin-top:8px"><p class="muted" style="font-size:12px"><span class="spin"></span> Searching…</p></div>';
+  el('ageVeil').classList.add('open');
+  fetchCharacterPhotos(actor, character, title, year).then(function(res){
+    var box = el('charPhotoBox');
+    if(!box) return;
+    if(!res.photos || !res.photos.length){ box.innerHTML = '<p class="muted" style="font-size:12px">No photos found.</p>'; return; }
+    var html = '<div style="display:flex;gap:6px;flex-wrap:wrap">';
+    res.photos.forEach(function(p){
+      var pidx = ref({ type:'viewphoto', url:p.full });
+      html += '<img src="' + esc(p.thumb) + '" data-action="viewphoto" data-ref="' + pidx + '" title="' + esc(p.source||'') + ' — click to enlarge" style="width:84px;height:84px;object-fit:cover;border-radius:6px;border:1px solid var(--line);cursor:pointer">';
+    });
+    box.innerHTML = html + '</div>';
+  }).catch(function(e){
+    var box = el('charPhotoBox');
+    if(!box) return;
+    if(e.upgradeRequired){
+      box.innerHTML = '<p style="font-size:12px;line-height:1.5">⭐ Character photos is a premium feature.</p>'
+        + '<button class="btn btn-gold btn-sm" data-action="upgrademonthly" style="margin-top:6px">⭐ Upgrade — $2.99/mo</button>';
+    } else {
+      box.innerHTML = '<p style="color:var(--red);font-size:12px">⚠️ ' + esc(e.message) + '</p>';
+    }
+  });
+}
 function showAgeInfo(id, name, movieYear){
   el('ageModal').innerHTML = '<button class="modal-x" data-action="closeage" title="Close">✕</button>'
     + '<h3 style="margin-top:0">' + esc(name) + '</h3>'
@@ -1644,6 +1701,23 @@ function loadAgePhotos(id, name, movieYear, birthYear){
     else { renderAgePhotos(id, [], false, movieYear); }
   });
 }
+// Wikimedia Commons' "Category:{Name} in {Year}" convention captures EVERYTHING a public figure
+// was photographed doing that year, not just film/press work -- the concrete case that surfaced
+// this: Keanu Reeves also tours as the bassist for Dogstar, and Commons correctly (if
+// unhelpfully, for a FILM app) tags his tour photos under "Keanu Reeves in 2024" right alongside
+// press/premiere photos. Checked Commons' actual category + extmetadata for one of those files --
+// there's no generic word like "concert" anywhere in it, just the proper nouns "Dogstar" and
+// "O2 Forum Kentish Town" (a venue). That means a purely generic keyword filter fundamentally
+// CAN'T catch every case like this -- telling "band name" from "film title" requires knowing who
+// the band is, which is world knowledge, not a lexical pattern. This filter is deliberately kept
+// non-AI/zero-cost (per this feature's whole design), so it's best-effort: broad generic
+// concert/tour/venue vocabulary below catches the general case, plus a short explicit list of
+// specific non-film activities we've actually confirmed slip through the generic list. Add to
+// either list as more cases like this turn up.
+var NON_FILM_PHOTO_KEYWORDS = /concert|\btour\b|\bgig\b|setlist|bassist|guitarist|drummer|keyboardist|\balbum\b|music video|band practice|rehearsal|live show|on stage performing|\bstadium\b|\bmatch\b|\barena\b|amphitheat(?:re|er)|\bforum\b|\bo2\b|\bpavilion\b/i;
+// Known specific non-film activities that slip past the generic list above (proper nouns, not
+// lexical patterns -- see the comment above on why those two categories are different problems).
+var NON_FILM_PHOTO_NAMES = /dogstar/i;
 function fetchCommonsYearPhotos(name, year){
   var cat = 'Category:' + name + ' in ' + year;
   var wmUrl = 'https://commons.wikimedia.org/w/api.php?action=query&generator=categorymembers&gcmtitle='
@@ -1652,6 +1726,8 @@ function fetchCommonsYearPhotos(name, year){
     var pages = (data.query && data.query.pages) || {};
     var out = [];
     Object.keys(pages).forEach(function(k){
+      var title = pages[k].title || '';
+      if(NON_FILM_PHOTO_KEYWORDS.test(title) || NON_FILM_PHOTO_NAMES.test(title)) return; // keep this feature about film/press photos
       var ii = pages[k].imageinfo && pages[k].imageinfo[0];
       var full = ii && ii.url;
       if(full && /\.(jpg|jpeg|png)$/i.test(full)) out.push({ thumb: ii.thumburl || full, full: full });
@@ -2934,6 +3010,7 @@ document.addEventListener('click', function(ev){
   else if(action==='closedrawer') closeDrawer();
   else if(action==='closemodal') attemptCloseModal();
   else if(action==='ageinfo'){ if(r) showAgeInfo(r.id, r.name, r.movieYear); }
+  else if(action==='charphoto'){ if(r) showCharacterPhoto(r.actor, r.character, r.title, r.year); }
   else if(action==='closeage') closeAgeInfo();
   else if(action==='viewphoto'){ if(r) openLightbox(r.url); }
   else if(action==='closelightbox') closeLightbox();
