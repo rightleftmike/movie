@@ -276,6 +276,14 @@ body.preauth header, body.preauth #appWrap{display:none!important}
 .btn-danger:hover{background:var(--red);color:#fff}
 .fb-box{width:100%;min-height:88px;resize:vertical}
 .settings-note{font-size:12px;color:var(--dim);line-height:1.6}
+.gift-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.gift-btn{flex:1 1 150px;min-width:140px;display:flex;flex-direction:column;align-items:center;gap:2px;
+  border:1px solid var(--line);border-radius:10px;background:transparent;color:var(--txt);
+  padding:12px 10px;cursor:pointer;font:inherit;text-align:center;transition:border-color .15s,background .15s}
+.gift-btn:hover{border-color:var(--gold);background:rgba(197,160,89,.06)}
+.gift-btn .gift-emoji{font-size:20px;line-height:1.2}
+.gift-btn .gift-name{font-size:12.5px;font-weight:600}
+.gift-btn .gift-amt{font-size:11px;color:var(--gold-dim)}
 .settings-note b{color:var(--txt)}
 [data-lucide]{width:1em;height:1em;stroke-width:1.75;vertical-align:-0.125em}
 .tab.on [data-lucide]{color:#171307}
@@ -445,7 +453,20 @@ body.preauth header, body.preauth #appWrap{display:none!important}
 
     <hr class="gold">
     <h3>How this is paid for</h3>
-    <div class="settings-note">Rewatch Club is free, and the AI features currently run on a <b>fixed pot of Google AI credit</b>. When that runs out — realistically within the next few months — <b>Suggest, Watch Tonight, note polishing and film stills may switch off</b>. Everything else, your ratings, notes, watchlist, follows and the episode list, keeps working regardless and stays free.<br><br>I'll keep the site running for as long as I can afford to. If you'd like to help it last longer, there's a popcorn button below — it buys nothing extra, it just helps.</div>
+    <div class="settings-note">Rewatch Club is free, and the AI features currently run on a <b>fixed pot of Google AI credit</b>. When that runs out — realistically within the next few months — <b>Suggest, Watch Tonight, note polishing and film stills may switch off</b>. Everything else, your ratings, notes, watchlist, follows and the episode list, keeps working regardless and stays free.<br><br>I'll keep the site running for as long as I can afford to. If you'd like to help it last longer, here's the tip jar — it buys nothing extra, it just helps.</div>
+
+    <div class="gift-row">
+      <button class="gift-btn" data-action="giftpopcorn">
+        <span class="gift-emoji">🍿</span><span class="gift-name">Buy us a popcorn</span><span class="gift-amt">$8</span>
+      </button>
+      <button class="gift-btn" data-action="giftticket">
+        <span class="gift-emoji">🎟️</span><span class="gift-name">Buy us a ticket</span><span class="gift-amt">$16</span>
+      </button>
+      <button class="gift-btn" data-action="giftscreening">
+        <span class="gift-emoji">🎬</span><span class="gift-name">The screening package</span><span class="gift-amt">you pick</span>
+      </button>
+    </div>
+    <div class="settings-note" style="margin-top:8px">One-time, no subscription, nothing recurring. These unlock no extra credits or features — they just go straight at the bill.</div>
 
     <hr class="gold">
     <h3>Requests &amp; feedback</h3>
@@ -550,6 +571,13 @@ var IMG = 'https://image.tmdb.org/t/p/';
 // Stripe Payment Links — filled in once the Stripe product/prices exist.
 var STRIPE_LINK_MONTHLY = 'https://buy.stripe.com/bJe00jgve6DH63P1n60oM02';
 var STRIPE_LINK_ANNUAL = 'https://buy.stripe.com/8x2dR9fra4vz0Jv4zi0oM03';
+// One-time gift links (created 2026-07-30). These are deliberately NOT subscriptions and grant
+// nothing: no credits, no supporter status, no features. The stripe-webhook function ignores any
+// checkout.session where mode !== 'subscription', so paying one of these cannot flip a profile to
+// plan='paid' -- that guard is what makes it safe to hand these out as pure "chip in" buttons.
+var STRIPE_GIFT_POPCORN   = 'https://buy.stripe.com/aFa00ja6Qd25eAl7Lu0oM04'; // $8
+var STRIPE_GIFT_TICKET    = 'https://buy.stripe.com/3cI8wPceY3rv1Nz0j20oM05'; // $16
+var STRIPE_GIFT_SCREENING = 'https://buy.stripe.com/cNi7sL2Eo9PT8bX5Dm0oM06'; // name your own
 
 /* ================= STATE ================= */
 var RW = [];            // episode list [{title,year,director,genres,host,guests}]
@@ -752,6 +780,20 @@ function aiErrorHTML(e){
       + '</div></div>';
   }
   return '<p style="color:var(--red);margin-top:10px">⚠️ ' + esc(e.message) + '</p>';
+}
+// One-time gifts. Separate from openUpgrade() on purpose: no plan is implied, the analytics
+// event is different, and it must work whether or not the person is signed in -- an anonymous
+// tip is fine, since nothing is being granted to an account.
+function openGift(url, tier){
+  if(!url){ toast('Gift link not set up yet \u2014 check back soon', 'err'); return; }
+  track('gift_started', { tier: tier });
+  var full = url;
+  if(ME){
+    var sep = url.indexOf('?') >= 0 ? '&' : '?';
+    full = url + sep + 'client_reference_id=' + encodeURIComponent(ME.id)
+         + (ME.email ? '&prefilled_email=' + encodeURIComponent(ME.email) : '');
+  }
+  window.open(full, '_blank', 'noopener');
 }
 function openUpgrade(url){
   if(!url){ toast('Support link not set up yet — check back soon', 'err'); return; }
@@ -3265,6 +3307,9 @@ document.addEventListener('click', function(ev){
   else if(action==='deletecancel') cancelDeleteAccount();
   else if(action==='upgrademonthly') openUpgrade(STRIPE_LINK_MONTHLY);
   else if(action==='upgradeannual') openUpgrade(STRIPE_LINK_ANNUAL);
+  else if(action==='giftpopcorn') openGift(STRIPE_GIFT_POPCORN, 'popcorn');
+  else if(action==='giftticket') openGift(STRIPE_GIFT_TICKET, 'ticket');
+  else if(action==='giftscreening') openGift(STRIPE_GIFT_SCREENING, 'screening');
   else if(action==='magiclink') sendMagicLink();
   else if(action==='google') signInGoogle();
   else if(action==='signout') signOut();
