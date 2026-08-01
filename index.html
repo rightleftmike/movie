@@ -574,8 +574,19 @@ var ME = null, PROFILE = null, BOOTED = false;
 // Cached result of my_ai_credit_status(). Server-side reserve_ai_credit() is the only real
 // enforcement -- this is purely so the UI can show a balance and warn before a wall is hit.
 var CREDITS = null;
-var SHEET_ID = '13KsNb1SxA7DYYQAzhaYxj_qKX0PXV1PXyKAZ7cEapRc';
-var SHEET_TAB = 'episode list';
+// The episode list is community-maintained in a public Google Sheet that someone else built and
+// shared. As of 2026-08-01 the browser NO LONGER fetches that sheet directly. Every visitor
+// hitting docs.google.com on page load meant pointing all of our traffic at a private
+// individual's file -- discourteous at scale, and a live dependency we don't control: if the
+// sheet moves, gets renamed, or has sharing restricted, the whole Show List dies.
+//
+// The `app` edge function now mirrors it: one fetch every 6 hours from our server, cached in
+// site_assets, served to everyone from there (same pattern as the podcast RSS). It returns the
+// raw CSV unchanged, so all the parsing below is untouched.
+//
+// SHEET_ID / SHEET_TAB stay here only as provenance -- nothing reads them any more.
+var SHEET_ID = '13KsNb1SxA7DYYQAzhaYxj_qKX0PXV1PXyKAZ7cEapRc'; // documentation only
+var SHEET_TAB = 'episode list';                                 // documentation only
 var TMDB_DEFAULT = '9f6a7cc8ad0b39dcb6381c44a16761cc';
 var IMG = 'https://image.tmdb.org/t/p/';
 // (TRIAL_DAYS removed 2026-07-29: there is no trial any more. Free access is a permanent weekly
@@ -1043,7 +1054,10 @@ function signOut(){
 
 /* ================= SHEET ================= */
 function loadSheet(){
-  var url = 'https://docs.google.com/spreadsheets/d/' + SHEET_ID + '/gviz/tq?tqx=out:csv&sheet=' + encodeURIComponent(SHEET_TAB);
+  // Our mirror, not Google. Falls back internally to a stale cached copy if the upstream sheet is
+  // unreachable, so a Google outage or a sharing change degrades to "slightly old list" rather
+  // than "no list".
+  var url = SB_URL + '/functions/v1/app?sheet=1';
   fetch(url).then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.text(); }).then(function(text){
     var rows = parseCSV(text);
     if(rows.length < 5) throw new Error('sheet looks empty');
@@ -1081,7 +1095,7 @@ function loadSheet(){
     if(out.length < 50) throw new Error('too few rows parsed');
     RW = out; sheetLive = true;
     try{localStorage.setItem('rw_cache',JSON.stringify(out));}catch(_){}
-    if(el('sheetStatus')) el('sheetStatus').innerHTML = '<span style="color:var(--green)">● Live from Google Sheet</span> — ' + RW.length + ' films';
+    if(el('sheetStatus')) el('sheetStatus').innerHTML = '<span style="color:var(--green)">● Episode list loaded</span> — ' + RW.length + ' films';
     populateGuestFilter();
     refreshCounts(); renderShow(); renderRatings();
     markRWReady();
