@@ -223,6 +223,10 @@ label{font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:.0
 .credit-pill.low b{color:var(--red)}
 .credit-tag{font-size:9px;background:var(--gold);color:#1a1608;border-radius:4px;padding:1px 4px;margin-left:5px;vertical-align:1px;font-weight:700;letter-spacing:.03em}
 .supporter-note{font-size:12px;color:var(--dim);line-height:1.6}
+/* Deliberately understated: present on every screen, but it should read as a footnote, not a
+   banner. Same size and colour as the surrounding disclaimer -- only the underline marks it. */
+.foot-link{color:var(--dim);text-decoration:underline;cursor:pointer}
+.foot-link:hover{color:var(--gold-dim)}
 .supporter-note b{color:var(--txt)}
 /* Voice Rating (premium): full-screen conversational overlay -- Gemini TTS asks each rating-form
    field as a spoken question with captions, Web Speech API (same engine as the mic dictation
@@ -428,9 +432,7 @@ body.preauth header, body.preauth #appWrap{display:none!important}
     <label>AI credits (Suggest, Refine, Watch Tonight, film stills)</label>
     <div class="kv" id="aiPlanStatus">Checking…</div>
     <div id="upgradeBox" style="margin-top:8px;display:none">
-      <div class="supporter-note" style="margin-bottom:10px">This is a fan-built project and it stays free — <b>everyone gets 10 AI credits a week</b>, no card needed to dive deeper into the movies we love.<br><br>Keeping it running isn't free, though: the AI, the database, the hosting, and everyone's free credits all land as a monthly bill. <b>Supporters cover a share of it</b> — which is honestly what lets the free tier stay free for people who can't or don't want to chip in.<br><br>25 credits a week, no ads, nothing sold on.</div>
-      <button class="btn btn-gold btn-sm" data-action="upgradeannual">♥ Support — $19.99/yr</button>
-      <button class="btn btn-outline btn-sm" data-action="upgrademonthly" style="margin-left:6px">or $2.99/mo</button>
+      <div class="supporter-note">Everyone gets <b>25 AI credits a week</b> — no card, no tiers, no account to upgrade. There's also a shared daily pool across all users, so on a busy day the AI can run dry before your own credits do. Rating films, notes, watchlist, follows and the episode list never touch credits and never run out.</div>
     </div>
     <!-- Supabase connection status, episode-list-source status + TMDB title audit tool, and
          podcast-link click stats used to render here -- all internal/debugging info with no
@@ -480,6 +482,7 @@ body.preauth header, body.preauth #appWrap{display:none!important}
     Rewatch Club is a fan-built, community-supported project and an unofficial companion for
     <b>The Rewatchables</b>. Not affiliated with, endorsed by, or sponsored by The Ringer or Spotify.
     Film data from TMDB.
+    <br><span class="foot-link" data-action="gotosupport">Chip in toward the AI bill</span>
   </div>
 </div>
 
@@ -569,8 +572,10 @@ var IMG = 'https://image.tmdb.org/t/p/';
 // credit allowance, so nothing counts down from signup. profiles.trial_ends_at is likewise unused
 // -- the column is left in place rather than dropped, since old rows still carry values.)
 // Stripe Payment Links — filled in once the Stripe product/prices exist.
-var STRIPE_LINK_MONTHLY = 'https://buy.stripe.com/bJe00jgve6DH63P1n60oM02';
-var STRIPE_LINK_ANNUAL = 'https://buy.stripe.com/8x2dR9fra4vz0Jv4zi0oM03';
+// Subscriptions were retired 2026-08-01. Rewatch Club is free and donation-supported: there is no
+// paid tier, no plan to buy, and nothing a payment unlocks. Both Stripe subscription products are
+// archived and their payment links deactivated, so the old STRIPE_LINK_MONTHLY / STRIPE_LINK_ANNUAL
+// constants are gone rather than left dangling at dead checkout URLs.
 // One-time gift links (created 2026-07-30). These are deliberately NOT subscriptions and grant
 // nothing: no credits, no supporter status, no features. The stripe-webhook function ignores any
 // checkout.session where mode !== 'subscription', so paying one of these cannot flip a profile to
@@ -745,38 +750,24 @@ function aiErrorHTML(e){
     return '<div class="paywall-card"><div class="paywall-overlay" style="margin:14px">'
       + '<div class="paywall-icon">\u23f3</div>'
       + '<div class="paywall-head">Today\u2019s shared credits are used up</div>'
-      + '<div class="paywall-sub">Free credits come out of a shared daily pool, and it\u2019s empty for today. It refills tomorrow. Supporters have their own, so they\u2019re not affected.</div>'
-      + '<button class="btn btn-gold" style="margin-top:12px;width:100%;max-width:280px" data-action="upgradeannual">\u2665 Support \u2014 $19.99/yr</button>'
-      + '<div style="margin-top:8px"><button class="btn" style="background:transparent;border:none;font-size:12px;color:var(--gold-dim);text-decoration:underline;padding:0" data-action="upgrademonthly">or $2.99/mo</button></div>'
-      + '</div></div>';
-  }
-  // A supporter who has genuinely used all 25 has nothing to buy -- selling to them here would be
-  // insulting. Just tell them when it resets.
-  if(e.reason === 'weekly_exhausted' && CREDITS && CREDITS.is_paid){
-    return '<div class="paywall-card"><div class="paywall-overlay" style="margin:14px">'
-      + '<div class="paywall-icon">\u2665</div>'
-      + '<div class="paywall-head">That\u2019s all 25 credits this week</div>'
-      + '<div class="paywall-sub">They reset ' + esc(creditResetLabel()) + '. Thanks for supporting this \u2014 it\u2019s what pays for it.</div>'
+      + '<div class="paywall-sub">Everyone draws AI credits from one shared daily pool, and it\u2019s empty for today. It refills tomorrow \u2014 nothing is wrong with your account, and there\u2019s nothing to buy.</div>'
+      + '<div class="paywall-sub" style="margin-top:10px">This is what the running costs look like from the inside. If you want to help the pool go further, there\u2019s a tip jar \u2014 it unlocks nothing.</div>'
+      + '<button class="btn btn-outline btn-sm" style="margin-top:12px" data-action="giftpopcorn">\ud83c\udf7f Buy us a popcorn \u2014 $8</button>'
+      + '<div style="margin-top:8px"><span class="foot-link" style="font-size:12px" data-action="gotosupport">other ways to chip in</span></div>'
       + '</div></div>';
   }
   if(e.upgradeRequired){
-    track('paywall_viewed', { trigger: 'ai_limit' });
-    // This is the actual conversion moment (trial ended / daily cap hit), so it gets a real
-    // "pre-paywall" treatment instead of a bare error line: a softly blurred preview of what a
-    // real suggestion result looks like, with one clear primary CTA (annual, anchored per the
-    // pricing plan) over it, and monthly as a small secondary option underneath rather than a
-    // second equally-weighted button.
-    return '<div class="paywall-card">'
-      + '<div class="paywall-preview">'
-      + '<div class="suggestion"><div class="st">A film picked for you</div><p style="font-size:13.5px;margin:6px 0">Tailored to your ratings and notes…</p></div>'
-      + '<div class="suggestion"><div class="st">Another great match</div><p style="font-size:13.5px;margin:6px 0">Weighed against what you’ve rated highly…</p></div>'
-      + '</div>'
-      + '<div class="paywall-overlay">'
-      + '<div class="paywall-icon">⭐</div>'
-      + '<div class="paywall-head">That\u2019s your 10 free credits for the week</div>'
-      + '<div class="paywall-sub">They reset ' + esc(creditResetLabel()) + ' \u2014 the free tier isn\u2019t going anywhere. Supporters get 25 a week, and cover what it costs to run.</div>'
-      + '<button class="btn btn-gold" style="margin-top:12px;width:100%;max-width:280px" data-action="upgradeannual">\u2665 Support \u2014 $19.99/yr</button>'
-      + '<div style="margin-top:8px"><button class="btn" style="background:transparent;border:none;font-size:12px;color:var(--gold-dim);text-decoration:underline;padding:0" data-action="upgrademonthly">or $2.99/mo</button></div>'
+    track('credits_exhausted', { trigger: 'weekly_cap' });
+    // No blurred "here's what you're missing" preview any more. That treatment only makes sense
+    // when there is something to buy; with no paid tier it would manufacture a paywall feeling
+    // for a wall that is really just a weekly reset.
+    return '<div class="paywall-card"><div class="paywall-overlay" style="margin:14px">'
+      + '<div class="paywall-icon">✨</div>'
+      + '<div class="paywall-head">That\u2019s your 25 AI credits for the week</div>'
+      + '<div class="paywall-sub">They reset ' + esc(creditResetLabel()) + '. Everything that doesn\u2019t need AI \u2014 rating films, notes, watchlist, follows, the episode list \u2014 keeps working as normal.</div>'
+      + '<div class="paywall-sub" style="margin-top:10px">There\u2019s no paid tier and nothing to upgrade to. The AI runs on a fixed pot; if you\u2019d like to help it last longer, the tip jar buys you nothing at all.</div>'
+      + '<button class="btn btn-outline btn-sm" style="margin-top:12px" data-action="giftpopcorn">\ud83c\udf7f Buy us a popcorn \u2014 $8</button>'
+      + '<div style="margin-top:8px"><span class="foot-link" style="font-size:12px" data-action="gotosupport">other ways to chip in</span></div>'
       + '</div></div>';
   }
   return '<p style="color:var(--red);margin-top:10px">⚠️ ' + esc(e.message) + '</p>';
@@ -795,15 +786,18 @@ function openGift(url, tier){
   }
   window.open(full, '_blank', 'noopener');
 }
-function openUpgrade(url){
-  if(!url){ toast('Support link not set up yet — check back soon', 'err'); return; }
-  if(!ME){ toast('Sign in first', 'err'); return; }
-  track('checkout_started', { plan: url===STRIPE_LINK_ANNUAL ? 'annual' : 'monthly' });
-  // client_reference_id is how the stripe-webhook function matches a completed checkout back
-  // to this Supabase user — Stripe Payment Links pass this straight through to the session.
-  var sep = url.indexOf('?') >= 0 ? '&' : '?';
-  var full = url + sep + 'client_reference_id=' + encodeURIComponent(ME.id) + (ME.email ? '&prefilled_email=' + encodeURIComponent(ME.email) : '');
-  window.open(full, '_blank', 'noopener');
+// openUpgrade() removed 2026-08-01 with the subscription tier. openGift() above is the only
+// payment path left, and it grants nothing.
+//
+// Sends the reader to the tip jar in Settings rather than straight out to Stripe: the Settings
+// section explains what the money is actually for and offers all three amounts, which is a fairer
+// place to land someone than a checkout page they didn't choose.
+function gotoSupport(){
+  showTab('settings');
+  setTimeout(function(){
+    var row = document.querySelector('.gift-row');
+    if(row) row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, 60);
 }
 // Reads the server's view of the caller's credits. my_ai_credit_status() is SECURITY DEFINER and
 // scoped to auth.uid(), so it's safe to call straight from the client.
@@ -851,21 +845,13 @@ function renderAiPlanStatus(){
   // There is no trial any more -- free access is permanent and weekly, so this reports a BALANCE
   // rather than a countdown to being locked out. (The old 3-day-trial branch was removed with the
   // credit system; TRIAL_DAYS and profiles.trial_ends_at are now unused.)
-  var cap  = CREDITS ? CREDITS.cap  : (PROFILE.plan === 'paid' ? 25 : 10);
+  var cap  = CREDITS ? CREDITS.cap  : 25;
   var left = CREDITS ? CREDITS.remaining : null;
   var bal  = (left == null)
     ? esc(String(cap)) + ' credits a week'
     : '<b>' + left + '</b> of ' + cap + ' credits left this week · resets ' + esc(creditResetLabel());
 
-  if(PROFILE.plan === 'paid'){
-    var renews = PROFILE.plan_renews_at ? new Date(PROFILE.plan_renews_at).toLocaleDateString() : '';
-    var status = PROFILE.subscription_status && PROFILE.subscription_status !== 'active'
-      ? ' <span style="color:var(--red)">(' + esc(PROFILE.subscription_status) + ')</span>' : '';
-    box.innerHTML = '<span style="color:var(--green)">♥ Supporter</span> — ' + bal
-      + (renews ? ' · renews ' + esc(renews) : '') + status;
-    if(upBox) upBox.style.display = 'none';
-    return;
-  }
+  // Everyone is on the same footing now -- no Supporter branch, no renewal date, no plan badge.
   if(upBox) upBox.style.display = 'block';
   var poolNote = (CREDITS && CREDITS.free_pool_exhausted)
     ? ' <span style="color:var(--red)">· shared pool empty until tomorrow</span>' : '';
@@ -1812,7 +1798,7 @@ function showCharacterPhoto(personId, movieId, actor, character, title, year){
       box.innerHTML = '<p style="font-size:12px;line-height:1.5">\u23f3 The shared free AI credits are used up for today \u2014 they refill tomorrow.</p>';
     } else if(e.reason === 'weekly_exhausted'){
       box.innerHTML = '<p style="font-size:12px;line-height:1.5">You\u2019ve used all your AI credits this week \u2014 they reset ' + esc(creditResetLabel()) + '.</p>'
-        + (CREDITS && CREDITS.is_paid ? '' : '<button class="btn btn-gold btn-sm" data-action="upgradeannual" style="margin-top:6px">\u2665 Support \u2014 $19.99/yr</button>');
+        + '<p style="font-size:12px;line-height:1.5;color:var(--dim)">Nothing to buy \u2014 there\u2019s no paid tier.</p>';
     } else {
       box.innerHTML = '<p style="color:var(--red);font-size:12px">⚠️ ' + esc(e.message) + '</p>';
     }
@@ -2528,10 +2514,8 @@ function voicePaywallHTML(){
     + '<p style="font-size:13.5px;margin:6px 0">Rate a film through a spoken conversation instead of typing…</p></div></div>'
     + '<div class="paywall-overlay">'
     + '<div class="paywall-icon">\u2665</div>'
-    + '<div class="paywall-head">Voice Rating is a supporter feature</div>'
-    + '<div class="paywall-sub">A spoken conversation walks you through rating a film \u2014 rating, rewatch, and your notes, all by voice. It asks each question out loud, which is the most expensive thing the app does per use, so it sits with the supporter tier.</div>'
-    + '<button class="btn btn-gold" style="margin-top:12px;width:100%;max-width:280px" data-action="upgradeannual">\u2665 Support \u2014 $19.99/yr</button>'
-    + '<div style="margin-top:8px"><button class="btn" style="background:transparent;border:none;font-size:12px;color:var(--gold-dim);text-decoration:underline;padding:0" data-action="upgrademonthly">or $2.99/mo</button></div>'
+    + '<div class="paywall-head">Voice Rating is switched off</div>'
+    + '<div class="paywall-sub">A spoken conversation walks you through rating a film. Speaking each question out loud is by far the most expensive thing the app can do per use, so it stays off while the AI runs on a fixed pot.</div>'
     + '</div></div>';
 }
 
@@ -3305,8 +3289,7 @@ document.addEventListener('click', function(ev){
   else if(action==='deleteaccount') promptDeleteAccount();
   else if(action==='deleteconfirm') confirmDeleteAccount();
   else if(action==='deletecancel') cancelDeleteAccount();
-  else if(action==='upgrademonthly') openUpgrade(STRIPE_LINK_MONTHLY);
-  else if(action==='upgradeannual') openUpgrade(STRIPE_LINK_ANNUAL);
+  else if(action==='gotosupport') gotoSupport();
   else if(action==='giftpopcorn') openGift(STRIPE_GIFT_POPCORN, 'popcorn');
   else if(action==='giftticket') openGift(STRIPE_GIFT_TICKET, 'ticket');
   else if(action==='giftscreening') openGift(STRIPE_GIFT_SCREENING, 'screening');
