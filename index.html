@@ -83,6 +83,14 @@ label{font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:.0
 .cast-card{flex:0 0 72px;text-align:center;cursor:pointer;position:relative}
 .age-btn{position:absolute;top:0;right:2px;background:var(--panel);border:1px solid var(--gold-dim);color:var(--gold);width:18px;height:18px;border-radius:50%;font-size:11px;line-height:16px;cursor:pointer;font-style:italic;font-weight:700}
 .age-btn:hover{background:var(--gold);color:#171307}
+/* Rewatchables-appearance count on a cast card. Sits where the old Wikimedia "i" button was.
+   Dimmer than .onshow-badge on the Following page on purpose -- there can be a dozen of these on
+   one movie card, so it has to read as a quiet annotation rather than a row of alerts. */
+.rw-count{position:absolute;top:0;right:2px;background:rgba(197,160,89,.16);border:1px solid var(--gold-dim);color:var(--gold);min-width:18px;height:18px;border-radius:9px;font-size:10px;font-weight:700;line-height:16px;text-align:center;padding:0 4px;box-sizing:border-box}
+.rw-count:empty{display:none}
+/* Same count inline on a crew chip (director / writers / cinematography). */
+.chip-count{display:inline-block;margin-left:6px;background:rgba(197,160,89,.16);border:1px solid var(--gold-dim);color:var(--gold);font-size:9.5px;font-weight:700;min-width:15px;height:15px;line-height:13px;border-radius:8px;padding:0 4px;text-align:center;vertical-align:middle}
+.chip-count:empty{display:none}
 .photo-btn{position:absolute;top:0;left:2px;background:var(--panel);border:1px solid var(--gold-dim);width:18px;height:18px;border-radius:50%;font-size:10px;line-height:17px;cursor:pointer}
 .photo-btn:hover{background:var(--gold)}
 .cast-card img{width:64px;height:64px;border-radius:50%;object-fit:cover;border:1px solid var(--line)}
@@ -439,7 +447,7 @@ body.preauth header, body.preauth #appWrap{display:none!important}
     <label>AI credits</label>
     <div class="kv" id="aiPlanStatus">Checking…</div>
     <div id="creditNote" style="margin-top:8px;display:none">
-      <div class="supporter-note">Credits are spent by <b>Suggest, Watch Tonight, note polishing and film stills</b>. Everyone gets <b>25 a week</b> — no card, no tiers, no account to upgrade. There's also a shared daily pool across all users, so on a busy day the AI can run dry before your own credits do. Rating films, notes, watchlist, follows and the episode list never touch credits and never run out.</div>
+      <div class="supporter-note">Credits are spent by <b>Suggest, Watch Tonight, note polishing and film stills</b>. Everyone gets <b>50 a week</b> — no card, no tiers, no account to upgrade. There's also a shared daily pool across all users, so on a busy day the AI can run dry before your own credits do. Rating films, notes, watchlist, follows and the episode list never touch credits and never run out.</div>
     </div>
     <!-- Supabase connection status, episode-list-source status + TMDB title audit tool, and
          podcast-link click stats used to render here -- all internal/debugging info with no
@@ -473,14 +481,14 @@ body.preauth header, body.preauth #appWrap{display:none!important}
          sequence reads "here's how it's paid for / now tell me what to build". -->
     <hr class="gold">
     <h3>Requests &amp; feedback</h3>
-    <div class="settings-note">Genuinely want to hear what's missing or annoying. It goes straight to me — no ticket system, no bot.</div>
+    <div class="settings-note">Genuinely want to hear what's missing or annoying. It goes straight to me.</div>
     <textarea id="fbMsg" class="fb-box" style="margin-top:10px" placeholder="What would make this better?"></textarea>
     <button class="btn btn-outline btn-sm" style="margin-top:8px" data-action="sendfeedback">Send it</button>
     <div id="fbMsgOut" class="settings-note" style="margin-top:6px"></div>
 
     <hr class="gold">
     <h3>Your data</h3>
-    <div class="settings-note"><b>Your ratings and notes belong to you.</b> Take a full copy whenever you like, and delete everything permanently whenever you like — no email, no asking, no waiting.</div>
+    <div class="settings-note"><b>Your ratings and notes belong to you.</b> Take a full copy whenever you like, and delete everything permanently whenever you like.</div>
     <button class="btn btn-outline" style="margin-top:10px" data-action="export">⬇ Export everything to JSON</button>
 
     <!-- Own section at the very bottom rather than nested inside "Your data". Export is safe and
@@ -791,7 +799,7 @@ function aiErrorHTML(e){
     // for a wall that is really just a weekly reset.
     return '<div class="paywall-card"><div class="paywall-overlay" style="margin:14px">'
       + '<div class="paywall-icon">✨</div>'
-      + '<div class="paywall-head">That\u2019s your 25 AI credits for the week</div>'
+      + '<div class="paywall-head">That\u2019s your 50 AI credits for the week</div>'
       + '<div class="paywall-sub">They reset ' + esc(creditResetLabel()) + '. Everything that doesn\u2019t need AI \u2014 rating films, notes, watchlist, follows, the episode list \u2014 keeps working as normal.</div>'
       + '<div class="paywall-sub" style="margin-top:10px">There\u2019s no paid tier and nothing to upgrade to. If you\u2019d like to contribute to the pot that powers this app \u2014 the AI, the hosting, the database \u2014 or you just dig it and want to pay it forward, here\u2019s the tip jar.</div>'
       + '<button class="btn btn-outline btn-sm" style="margin-top:12px" data-action="giftpopcorn">\ud83c\udf7f Buy us a popcorn \u2014 $8</button>'
@@ -873,7 +881,7 @@ function renderAiPlanStatus(){
   // There is no trial any more -- free access is permanent and weekly, so this reports a BALANCE
   // rather than a countdown to being locked out. (The old 3-day-trial branch was removed with the
   // credit system; TRIAL_DAYS and profiles.trial_ends_at are now unused.)
-  var cap  = CREDITS ? CREDITS.cap  : 25;
+  var cap  = CREDITS ? CREDITS.cap  : 50;
   var left = CREDITS ? CREDITS.remaining : null;
   var bal  = (left == null)
     ? esc(String(cap)) + ' credits a week'
@@ -1579,11 +1587,12 @@ function renderPeopleGrid(arr){
 // director/writer/DP crew jobs) against the episode list the same way the person drawer's "On
 // The Rewatchables" section does.
 var ONSHOW_CACHE = {};
-function getOnShowCount(name){
+function getOnShowCount(name, knownId){
   var key = name.toLowerCase();
   if(ONSHOW_CACHE[key] != null) return Promise.resolve(ONSHOW_CACHE[key]);
   return waitForRW().then(function(){
-    return tmdbSearchPerson(name).then(function(hit){
+    var find = knownId ? Promise.resolve({ id: knownId }) : tmdbSearchPerson(name);
+    return Promise.resolve(find).then(function(hit){
       if(!hit){ ONSHOW_CACHE[key] = 0; return 0; }
       return tmdbPerson(hit.id).then(function(p){
         var cc = p.combined_credits || {}, seen = {}, count = 0;
@@ -1655,6 +1664,7 @@ function openMovieCard(tmdbId, skipNav){
     window.scrollTo({ top: 0, behavior: 'smooth' });
     var epy = m.release_date ? m.release_date.slice(0,4) : '';
     if(rwFind(m.title, epy)) fillEpisodeBox(m.title, epy ? Number(epy) : null);
+    fillRWCounts();
   }).catch(function(e){
     el('cardBox').innerHTML = '<div class="card" style="border-color:var(--red)">⚠️ ' + esc(e.message) + '</div>';
   });
@@ -1672,10 +1682,38 @@ function crewOf(m, jobs){
 function isFollowed(name){
   return PEOPLE.some(function(p){ return p.name.toLowerCase()===name.toLowerCase(); });
 }
+// Collected while a movie card's HTML is being built, then filled in asynchronously after it's in
+// the DOM -- counting appearances needs a TMDB round-trip per person, and blocking the card render
+// on ~20 of those would make every film feel slow.
+var RW_COUNT_TARGETS = [];
 function personChip(p, roleLabel){
   var idx = ref({ type:'personById', id:p.id, name:p.name });
   var followed = isFollowed(p.name);
-  return '<span class="chip' + (followed?' chip-followed':'') + '" data-action="person" data-ref="' + idx + '"' + (followed?' title="Following"':'') + '>' + esc(p.name) + (roleLabel ? ' <span class="muted">· ' + esc(roleLabel) + '</span>' : '') + '</span>';
+  RW_COUNT_TARGETS.push({ id:p.id, name:p.name, el:'rwc_p' + p.id });
+  return '<span class="chip' + (followed?' chip-followed':'') + '" data-action="person" data-ref="' + idx + '"' + (followed?' title="Following"':'') + '>' + esc(p.name) + (roleLabel ? ' <span class="muted">· ' + esc(roleLabel) + '</span>' : '') + '<span class="chip-count" id="rwc_p' + p.id + '" title="Rewatchables episodes this person appears in"></span></span>';
+}
+// Fills every count badge queued during the last card render.
+//
+// Only 2 and above are shown. On a Rewatchables film every single person trivially has at least
+// one appearance -- this one -- so painting a "1" on all twenty of them would be a wall of noise
+// that says nothing. A 2+ means "they turn up on the show more than just here", which is the
+// interesting fact. (To show every count instead, change the `> 1` test below to `> 0`.)
+function fillRWCounts(){
+  var targets = RW_COUNT_TARGETS.slice();
+  RW_COUNT_TARGETS = [];
+  if(!targets.length) return;
+  var seen = {};
+  targets = targets.filter(function(t){
+    var k = String(t.id);
+    if(seen[k]) return false;
+    seen[k] = 1; return true;
+  });
+  mapLimit(targets, 4, function(t){
+    return getOnShowCount(t.name, t.id).then(function(n){
+      var box = el(t.el);
+      if(box && n > 1) box.textContent = n;
+    }).catch(function(){ /* a missing count is not worth surfacing */ });
+  });
 }
 function money(n){ return n ? '$' + (n>=1e9 ? (n/1e9).toFixed(2)+'B' : Math.round(n/1e6)+'M') : null; }
 function movieCardHTML(m){
@@ -1726,10 +1764,10 @@ function movieCardHTML(m){
     var followedC = isFollowed(c.name);
     var ring = followedC ? ' followed-ring' : '';
     var img = c.profile_path ? '<img class="' + ring.trim() + '" src="' + IMG + 'w185' + c.profile_path + '">' : '<div class="cast-noimg' + ring + '">🎭</div>';
-    var aidx = ref({ type:'ageinfo', id:c.id, name:c.name, movieYear:year?Number(year):null });
     var pidx2 = ref({ type:'charphoto', personId:c.id, movieId:m.id, actor:c.name, character:c.character||'', title:m.title, year:year?Number(year):null });
+    RW_COUNT_TARGETS.push({ id:c.id, name:c.name, el:'rwc_c' + c.id });
     castHtml += '<div class="cast-card" data-action="person" data-ref="' + cidx + '"' + (followedC?' title="Following"':'') + '>'
-      + '<span class="age-btn" data-action="ageinfo" data-ref="' + aidx + '" title="Free: public/press photos of ' + esc(c.name) + ' over the years">i</span>'
+      + '<span class="rw-count" id="rwc_c' + c.id + '" title="Rewatchables episodes this person appears in"></span>'
       + '<span class="photo-btn" data-action="charphoto" data-ref="' + pidx2 + '" title="Find ' + esc(c.name) + (c.character ? ' as ' + esc(c.character) : '') + ' in ' + esc(m.title) + ' \u2014 uses 1 AI credit (free once someone\u2019s looked it up)">🎬</span>'
       + img + '<div class="cn">' + esc(c.name) + '</div><div class="cc">' + esc(c.character||'') + '</div></div>';
   }
@@ -3104,7 +3142,7 @@ function depthNudgeHTML(){
     // The taste-profile prompt explicitly refuses high confidence without some negative signal to
     // triangulate against, so this is a real modelling gap and not a nag.
     body = 'Everything you\u2019ve rated is Liked or better, so there\u2019s nothing here showing what you\u2019d <b>bounce off</b>. Rating one film that didn\u2019t land sharpens this more than another favourite.';
-    action = 'tab" data-tab="ratings'; label = 'Rate something that missed';
+    action = 'tab" data-tab="show'; label = 'Rate something that missed';
   } else if(d.follows === 0){
     body = 'Following a few actors, writers or directors lets this weight their filmographies when it picks.';
     action = 'tab" data-tab="people'; label = 'Find people to follow';
