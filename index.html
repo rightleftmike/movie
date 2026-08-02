@@ -223,6 +223,13 @@ label{font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:.0
 .credit-pill.low b{color:var(--red)}
 .credit-tag{font-size:9px;background:var(--gold);color:#1a1608;border-radius:4px;padding:1px 4px;margin-left:5px;vertical-align:1px;font-weight:700;letter-spacing:.03em}
 .supporter-note{font-size:12px;color:var(--dim);line-height:1.6}
+/* What fed the AI result. Deliberately quiet -- this is provenance, not a call to action. */
+.ai-inputs{font-size:11.5px;color:var(--dim);margin-top:14px;padding-top:10px;border-top:1px solid var(--line);letter-spacing:.02em}
+/* The one conditional nudge. Sits UNDER the result, never in place of it. */
+.depth-nudge{margin-top:10px;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:rgba(197,160,89,.04)}
+.depth-nudge p{margin:0;font-size:12.5px;color:var(--dim);line-height:1.6}
+.depth-nudge b{color:var(--txt)}
+.depth-nudge .btn{margin-top:10px}
 /* Deliberately understated: present on every screen, but it should read as a footnote, not a
    banner. Same size and colour as the surrounding disclaimer -- only the underline marks it. */
 .foot-link{color:var(--dim);text-decoration:underline;cursor:pointer}
@@ -1345,6 +1352,14 @@ function tasteProfile(maxLen){
     if(r.vibe) notes.push('vibe/what stuck: ' + r.vibe);
     if(r.fav_actor) notes.push('standout: ' + r.fav_actor);
     if(r.didnt_click) notes.push('didn’t click: ' + r.didnt_click);
+    // Below were previously dropped from this string entirely. `notes` in particular is the
+    // richest free-text field there is, and omitting it meant something written seconds ago
+    // couldn't influence the very next suggestion -- it only landed once build-taste-profile
+    // next rebuilt the cached profile server-side. pulled_in/fav_scene are legacy columns kept
+    // for historical rows.
+    if(r.pulled_in) notes.push('what pulled me in: ' + r.pulled_in);
+    if(r.fav_scene) notes.push('favourite scene: ' + r.fav_scene);
+    if(r.notes) notes.push('notes: ' + r.notes);
     if(notes.length) l += ' | ' + notes.join(' | ');
     lines.push(l);
   }
@@ -2318,7 +2333,6 @@ function renderRatingForm(keepVals){
     + taBlock('rf_vibe', 'What stuck with me', v('vibe', e.vibe), 'Vibe, what pulled you in, a favorite scene — whatever comes to mind')
     + taBlock('rf_actor', 'Standout performance', v('fav_actor', e.fav_actor)) + castChips
     + taBlock('rf_didnt', 'What didn’t click', v('didnt_click', e.didnt_click))
-    + taBlock('rf_notes', 'Other notes', v('notes', e.notes))
     + followSection
     + '<div id="refineBox"></div>'
     + '<div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap">'
@@ -2346,16 +2360,17 @@ function taBlock(id, label, value, placeholder){
 }
 function collectForm(){
   function gv(id){ var x = el(id); return x ? x.value.trim() : ''; }
-  // tier/pulled_in/fav_scene are intentionally omitted here (not just set to null) -- those
-  // fields were dropped from the form, but existing ratings may still have historical values in
-  // those columns, and omitting the key means a Supabase .update() leaves them untouched instead
-  // of wiping them out on every unrelated edit.
+  // tier/pulled_in/fav_scene/notes are intentionally omitted here (not just set to null) --
+  // those fields were dropped from the form, but existing ratings may still have historical
+  // values in those columns, and omitting the key means a Supabase .update() leaves them
+  // untouched instead of wiping them out on every unrelated edit. (notes joined this list
+  // 2026-08-02 when the "Other notes" box was removed as redundant.)
   return {
     rating: gv('rf_rating'), rewatch: gv('rf_rewatch'),
     times_seen: gv('rf_times') ? parseInt(gv('rf_times'),10) : null,
     first_seen_year: gv('rf_first') ? parseInt(gv('rf_first'),10) : null,
     vibe: gv('rf_vibe') || null, fav_actor: gv('rf_actor') || null,
-    didnt_click: gv('rf_didnt') || null, notes: gv('rf_notes') || null
+    didnt_click: gv('rf_didnt') || null
   };
 }
 function saveRating(){
@@ -2456,7 +2471,7 @@ function quickRate(title, year, n){
 }
 function refineNotes(){
   var d = collectForm();
-  var fields = { vibe:d.vibe, fav_actor:d.fav_actor, didnt_click:d.didnt_click, notes:d.notes };
+  var fields = { vibe:d.vibe, fav_actor:d.fav_actor, didnt_click:d.didnt_click };
   var any = Object.keys(fields).some(function(k){ return fields[k]; });
   if(!any){ toast('Write some rough notes first', 'err'); return; }
   el('refineBox').innerHTML = aiThinkingHTML('refine');
@@ -2470,7 +2485,7 @@ function refineNotes(){
     var out = extractJSON(text);
     if(!out) throw new Error('Could not parse refinement');
     FORM.refined = out;
-    var labels = { vibe:'What stuck with me', fav_actor:'Standout', didnt_click:'Didn’t click', notes:'Notes' };
+    var labels = { vibe:'What stuck with me', fav_actor:'Standout', didnt_click:'Didn’t click' };
     var html = '<hr class="gold"><h3>Original vs Refined — tap a refined cell to use it</h3>';
     Object.keys(labels).forEach(function(k){
       if(!fields[k] || !out[k]) return;
@@ -2483,7 +2498,7 @@ function refineNotes(){
     el('refineBox').innerHTML = html;
   }).catch(function(e){ el('refineBox').innerHTML = aiErrorHTML(e); });
 }
-var REFINE_FIELD_IDS = { vibe:'rf_vibe', fav_actor:'rf_actor', didnt_click:'rf_didnt', notes:'rf_notes' };
+var REFINE_FIELD_IDS = { vibe:'rf_vibe', fav_actor:'rf_actor', didnt_click:'rf_didnt' };
 function formIsDirty(){
   return !!(FORM && FORM.snapshot != null && JSON.stringify(collectForm()) !== FORM.snapshot);
 }
@@ -3037,10 +3052,69 @@ function runSuggest(){
         + '<div style="display:flex;gap:8px"><button class="btn btn-outline btn-sm" data-action="movie" data-ref="' + midx + '">View</button>'
         + '<span id="sugwl-' + i + '">' + watchlistToggleHTML(s.title, s.year, 'claude suggestion', true) + '</span></div></div>';
     });
-    out.innerHTML = html;
+    // Footer goes AFTER the results, never instead of them -- withholding the suggestion to
+    // extract behaviour would be coercive, and people would simply leave.
+    out.innerHTML = html + aiFooterHTML();
     track('suggestion_result_shown', { count: arr.length });
   }).catch(function(e){ out.innerHTML = aiErrorHTML(e); });
 }
+
+/* ================= AI INPUT TRANSPARENCY & DEPTH NUDGES ================= */
+// What actually feeds Suggest / Watch Tonight, counted the same way the model sees it.
+// "wroteAbout" counts a rating that has ANY prose in it, which is exactly what reaches the
+// taste-profile builder -- it is deliberately NOT a count of one particular field, because the
+// distinction between "a note" and "a rating" is meaningless to the model and confusing to read.
+function profileDepth(){
+  var wrote = 0, negative = 0, i, r;
+  for(i=0;i<MY.length;i++){
+    r = MY[i];
+    if(r.vibe || r.fav_actor || r.didnt_click || r.notes || r.fav_scene || r.pulled_in) wrote++;
+    if(r.rating === 'Meh' || r.rating === 'Disliked') negative++;
+  }
+  return { rated: MY.length, wrote: wrote, negative: negative, follows: PEOPLE.length };
+}
+// Provenance line. Shown under every AI result: seeing the inputs makes an imbalance obvious
+// without anyone being told off about it, and it keeps the app honest about what it's working
+// from rather than implying more insight than it has.
+function aiInputsHTML(){
+  var d = profileDepth();
+  if(!d.rated) return '';
+  var bits = [d.rated + (d.rated === 1 ? ' film rated' : ' films rated')];
+  bits.push(d.wrote + ' you wrote about');
+  if(d.follows) bits.push(d.follows + (d.follows === 1 ? ' person' : ' people') + ' you follow');
+  return '<div class="ai-inputs">Based on ' + bits.join(' · ') + '</div>';
+}
+// ONE nudge, never a checklist. Ordered by leverage: the weakest input is the only one shown, so
+// this reads as a single next step rather than homework. Each disappears for good once its
+// threshold is passed, which is why there is no dismiss button.
+function depthNudgeHTML(){
+  var d = profileDepth();
+  if(!d.rated) return '';
+  var body = null, action = null, label = null;
+
+  if(d.rated < 10){
+    body = 'Most of the signal comes from your first ten or so films \u2014 this sharpens quickly from here.';
+    action = 'tab" data-tab="show'; label = 'Browse the Show List';
+  } else if(d.wrote === 0){
+    // Highest-leverage gap by a distance: with no prose at all the model only has star ratings,
+    // which tell it what you watch and nothing about why.
+    body = 'Right now this is working from star ratings alone. <b>A sentence about one film</b> \u2014 what stuck, or what didn\u2019t \u2014 tells it more than ten more ratings would.';
+    action = 'tab" data-tab="ratings'; label = 'Add a thought to a film';
+  } else if(d.negative === 0){
+    // The taste-profile prompt explicitly refuses high confidence without some negative signal to
+    // triangulate against, so this is a real modelling gap and not a nag.
+    body = 'Everything you\u2019ve rated is Liked or better, so there\u2019s nothing here showing what you\u2019d <b>bounce off</b>. Rating one film that didn\u2019t land sharpens this more than another favourite.';
+    action = 'tab" data-tab="ratings'; label = 'Rate something that missed';
+  } else if(d.follows === 0){
+    body = 'Following a few actors, writers or directors lets this weight their filmographies when it picks.';
+    action = 'tab" data-tab="people'; label = 'Find people to follow';
+  } else {
+    return '';
+  }
+  return '<div class="depth-nudge"><p>' + body + '</p>'
+    + '<button class="btn btn-outline btn-sm" data-action="' + action + '">' + label + '</button></div>';
+}
+function aiFooterHTML(){ return aiInputsHTML() + depthNudgeHTML(); }
 
 /* ================= WATCH TONIGHT ================= */
 function watchTonight(){
@@ -3085,7 +3159,8 @@ function renderTonight(pick){
     + '<button class="btn btn-gold" data-action="movie" data-ref="' + midx + '">View film</button>'
     + '<span id="tonightwl">' + watchlistToggleHTML(pick.title, pick.year, 'watch tonight') + '</span>'
     + '<button class="btn btn-outline" data-action="tonight">🎲 Pick something else</button>'
-    + '</div></div></div></div>';
+    + '</div></div></div></div>'
+    + aiFooterHTML();
   loadTonightPoster(pick.title, pick.year);
 }
 // Best-effort poster art for the Watch Tonight hero -- a plain empty div if the lookup fails or
