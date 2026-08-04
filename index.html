@@ -259,6 +259,14 @@ label{font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:.0
 /* Deliberately understated: present on every screen, but it should read as a footnote, not a
    banner. Same size and colour as the surrounding disclaimer -- only the underline marks it. */
 .ep-tag{display:inline-block;margin-left:6px;font-size:10px;letter-spacing:.05em;text-transform:uppercase;color:var(--dim);border:1px solid var(--line);border-radius:6px;padding:1px 6px;vertical-align:middle}
+.guest-only{display:none}
+body.guest .guest-only{display:inline-flex}
+body.guest .auth-only{display:none!important}
+.auth-peek{margin-top:16px;padding-top:14px;border-top:1px solid var(--line);font-size:12.5px}
+.auth-peek a{color:var(--dim);text-decoration:none;border-bottom:1px dotted var(--gold-dim)}
+.auth-peek a:hover{color:var(--gold)}
+.guest-note{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:13px;color:var(--dim)}
+.guest-note b{color:var(--gold)}
 .upcoming-tag{display:inline-block;margin-left:6px;font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--gold);border:1px solid var(--gold-dim);border-radius:6px;padding:1px 6px;vertical-align:middle}
 .install-steps{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-top:10px;font-size:12.5px;color:var(--dim);line-height:1.65}
 .install-steps b{color:var(--txt)}
@@ -380,7 +388,8 @@ body.preauth header, body.preauth #appWrap{display:none!important}
       <button class="btn btn-outline" data-action="dosearch">Go</button>
       <div class="ac" id="ac" style="display:none"></div>
     </div>
-    <button class="btn btn-gold" data-action="tonight">🍿 Watch Tonight</button>
+    <button class="btn btn-gold auth-only" data-action="tonight">🍿 Watch Tonight</button>
+    <button class="btn btn-gold guest-only" data-action="guestsignin">Sign in</button>
   </div>
   <div class="tabs" id="tabs">
     <div class="tab on" data-action="tab" data-tab="show"><i data-lucide="clapperboard"></i> Show List <span class="count" id="cShow">0</span></div>
@@ -388,7 +397,7 @@ body.preauth header, body.preauth #appWrap{display:none!important}
     <div class="tab" data-action="tab" data-tab="suggest"><i data-lucide="sparkles"></i> Suggest</div>
     <div class="tab" data-action="tab" data-tab="people"><i data-lucide="users"></i> Following <span class="count" id="cPeople">0</span></div>
     <div class="tab" data-action="tab" data-tab="watchlist"><i data-lucide="bookmark"></i> Watchlist <span class="count" id="cWl">0</span></div>
-    <div class="tab" data-action="tab" data-tab="settings"><i data-lucide="settings"></i></div>
+    <div class="tab auth-only" data-action="tab" data-tab="settings"><i data-lucide="settings"></i></div>
   </div>
 </div></header>
 
@@ -587,6 +596,7 @@ body.preauth header, body.preauth #appWrap{display:none!important}
     <div class="auth-sep">or</div>
     <button class="btn gbtn" data-action="google">Continue with Google</button>
     <div class="auth-msg" id="authMsg"></div>
+    <div class="auth-peek"><a href="#" data-action="guest">Just looking? Browse the episode list without an account →</a></div>
     <div class="auth-foot">We'll email you a one-time sign-in link — no password to remember.<br><br>An unofficial companion for <b>The Rewatchables</b>, built by listeners. Not affiliated with The Ringer or Spotify.</div>
   </div>
 </div>
@@ -1048,6 +1058,66 @@ function loadCloud(){
 }
 
 /* ================= AUTH ================= */
+// Guest mode is deliberately NOT an anonymous Supabase session: no row is created, no token is
+// issued, nothing to clean up, and a bot loading the page costs exactly one cached CSV read. The
+// only things that spend real money -- Gemini and the Serper photo lookups -- already refuse to
+// run without a JWT and a reserved credit, so a guest cannot reach them however hard they try.
+var GUEST = false;
+
+// Every action a guest is not allowed to take, mapped to the sentence shown on the sign-in card.
+// Keyed by the same data-action strings the delegated click handler dispatches on, so a new
+// button is covered the moment its action name is added here -- nothing to wire per-button.
+var GUEST_BLOCKED = {
+  rate:'Sign in to rate this one.', quickrate:'Sign in to rate this one.',
+  saverating:'Sign in to save your rating.', deleterating:'Sign in to manage your ratings.',
+  voicerate:'Sign in to rate this one.', voicerateform:'Sign in to rate this one.',
+  refine:'Sign in to use the AI features.', userefined:'Sign in to use the AI features.',
+  userefinedall:'Sign in to use the AI features.', mic:'Sign in to dictate notes.',
+  castchip:'Sign in to save a standout performance.', togglefollow:'Sign in to follow people.',
+  wladd:'Sign in to keep a watchlist.', wladdclear:'Sign in to keep a watchlist.',
+  wlremove:'Sign in to keep a watchlist.', watched:'Sign in to keep a watchlist.',
+  follow:'Sign in to follow actors, writers and directors.',
+  followclear:'Sign in to follow actors, writers and directors.',
+  unfollow:'Sign in to follow actors, writers and directors.',
+  suggest:'Sign in to get suggestions built from your own taste.',
+  tonight:'Sign in to get suggestions built from your own taste.',
+  charphoto:'Sign in to look up stills.', export:'Sign in to export your data.',
+  sendfeedback:'Sign in to send a message.', savename:'Sign in first.',
+  saveprofile:'Sign in first.', deleteaccount:'Sign in first.', signout:'Sign in first.',
+  loadclickstats:'Sign in first.', deleteconfirm:'Sign in first.', deletecancel:'Sign in first.',
+  auditrw:'Sign in first.'
+};
+
+function enterGuest(){
+  GUEST = true;
+  hideBoot();
+  el('authGate').style.display = 'none';
+  el('onboardGate').style.display = 'none';
+  document.body.classList.remove('preauth');
+  document.body.classList.add('guest');
+  el('subTitle').textContent = 'Browsing as a guest';
+  initNav();
+  // Only the episode list -- loadCloud() would need a token, and there is nothing personal to load.
+  if(!BOOTED){ BOOTED = true; loadSheet(); }
+  track('guest_entered', {});
+}
+
+// Sends a guest back to the sign-in card with a line saying what they were reaching for. Resets
+// BOOTED so that a successful sign-in runs the full loadCloud()+loadSheet() boot rather than
+// silently skipping it because the guest pass already flipped the flag.
+function requireSignIn(why){
+  GUEST = false; BOOTED = false;
+  document.body.classList.remove('guest');
+  document.body.classList.add('preauth');
+  showGate('login');
+  el('authMsg').innerHTML = '<span style="color:var(--gold)">' + esc(why || 'Sign in to do that.') + '</span>';
+  track('guest_hit_gate', { reason: why || '' });
+}
+
+function guestNoticeHTML(headline, sub){
+  return emptyStateHTML('🔒', headline, sub, 'Sign in', 'guestsignin');
+}
+
 function hideBoot(){ var b = el('bootLoading'); if(b) b.style.display = 'none'; }
 function showGate(which){
   hideBoot();
@@ -1123,7 +1193,11 @@ function enterApp(){
   hideBoot();
   el('authGate').style.display = 'none';
   el('onboardGate').style.display = 'none';
+  // Also clears guest state directly, so a magic link opened in another tab lands in the real app
+  // rather than inheriting a half-guest UI from this one.
+  GUEST = false;
   document.body.classList.remove('preauth');
+  document.body.classList.remove('guest');
   renderUserBox();
   setSubtitle();
   renderAiPlanStatus();
@@ -1565,6 +1639,8 @@ function renderStats(){
 
 /* ================= RENDER: RATINGS ================= */
 function renderRatings(){
+  if(GUEST){ el('rGrid').innerHTML = guestNoticeHTML('Your ratings live here',
+    'Rate a film and it lands on this shelf — with what stuck with you, who stood out, and whether you would watch it again.'); return; }
   renderStats();
   var srt = el('fSort').value;
   var activeFilters = Object.keys(RATING_FILTER);
@@ -1694,6 +1770,8 @@ function renderShow(){
 
 /* ================= RENDER: WATCHLIST ================= */
 function renderWatchlist(){
+  if(GUEST){ el('wlList').innerHTML = guestNoticeHTML('Your watchlist lives here',
+    'Save anything you have not seen yet from any film page, and Watch Tonight pulls from it first.'); return; }
   var html = '';
   for(var i=0;i<WL.length;i++){
     var w = WL[i];
@@ -1711,6 +1789,8 @@ function renderWatchlist(){
 
 /* ================= RENDER: PEOPLE ================= */
 function renderPeople(){
+  if(GUEST){ el('peopleGrid').innerHTML = guestNoticeHTML('The people you follow live here',
+    'Follow an actor, writer or director and their films get flagged everywhere they appear — and weighted when suggestions are picked.'); return; }
   var srt = el('peopleSort') ? el('peopleSort').value : 'az';
   if(srt === 'onshow'){
     // Needs every count resolved before it can sort, unlike A-Z/Recent which sort on data
@@ -3634,6 +3714,9 @@ document.addEventListener('click', function(ev){
   var t = ev.target.closest('[data-action]');
   if(!t) return;
   var action = t.getAttribute('data-action');
+  // One choke point for the whole app: a guest who taps anything that would need to persist
+  // gets the sign-in card instead, and no gated code path runs at all.
+  if(GUEST && GUEST_BLOCKED[action]){ ev.preventDefault(); requireSignIn(GUEST_BLOCKED[action]); return; }
   var r = t.hasAttribute('data-ref') ? REF[Number(t.getAttribute('data-ref'))] : null;
   if(action==='tab'){ var tabName = t.getAttribute('data-tab'); if(tabName !== CURRENT_TAB) navPushTab(tabName); showTab(tabName); }
   else if(action==='auditrw') auditRW();
@@ -3721,6 +3804,8 @@ document.addEventListener('click', function(ev){
   else if(action==='giftpopcorn') openGift(STRIPE_GIFT_POPCORN, 'popcorn');
   else if(action==='giftticket') openGift(STRIPE_GIFT_TICKET, 'ticket');
   else if(action==='giftscreening') openGift(STRIPE_GIFT_SCREENING, 'screening');
+  else if(action==='guest'){ ev.preventDefault(); enterGuest(); }
+  else if(action==='guestsignin'){ ev.preventDefault(); requireSignIn('Free, and your ratings stay yours — export or delete everything at any time.'); }
   else if(action==='magiclink') sendMagicLink();
   else if(action==='google') signInGoogle();
   else if(action==='signout') signOut();
