@@ -150,7 +150,7 @@ label{font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:.0
 .rowlist{display:flex;flex-direction:column;gap:6px}
 .rowitem{display:flex;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:9px 12px}
 .rowitem .grow{flex:1;min-width:0;cursor:pointer}
-.rowitem .grow:hover .t{text-decoration:underline}
+.rowitem .grow:hover .t .tt{text-decoration:underline}
 .rowitem .badge.mine:hover,.sugbadge .badge.mine:hover{text-decoration:underline;color:#e0c574}
 .rowitem .t{font-weight:500;font-size:14px}
 .rowitem .s{color:var(--dim);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -679,6 +679,12 @@ function refreshMovieCard(){
   var m = CURRENT_CARD_MOVIE;
   var epy = m.release_date ? m.release_date.slice(0,4) : '';
   if(rwFind(m.title, epy)) fillEpisodeBox(m.title, epy ? Number(epy) : null);
+  // Exactly the same trap as the episode box described above: movieCardHTML() re-queues every
+  // cast/crew member into RW_COUNT_TARGETS, but only openMovieCard() used to drain that queue. So
+  // following someone (or toggling the watchlist) repainted the card and left every appearance
+  // badge blank until a full reload. Anything that initialises asynchronously after a render has
+  // to be re-triggered here too.
+  fillRWCounts();
 }
 function refreshPersonDrawer(){
   if(!CURRENT_DRAWER_PERSON) return;
@@ -754,7 +760,13 @@ function titleMatch(a, b){
   if(na === nb) return true;
   // Subtitle-tolerant: one side may carry a subtitle the other omits, but the shared part must be
   // the WHOLE of the other title and must end where the subtitle begins.
-  var ha = norm(stripLeadingArticle(titleHead(a))), hb = norm(stripLeadingArticle(titleHead(b)));
+  // A head wrapped in quotes is naming ANOTHER work, not being it: "'Ocean's Eleven': The Look of
+  // the Con" is a making-of documentary, and matching it to the Ocean's Eleven episode put a
+  // behind-the-scenes featurette in Soderbergh's On The Rewatchables list. Introduced by the
+  // subtitle rule above, so it's excluded here rather than by loosening that rule.
+  function quotedHead(t){ return /^\s*['"\u2018\u201c]/.test(String(t||'')); }
+  var ha = quotedHead(a) ? '' : norm(stripLeadingArticle(titleHead(a)));
+  var hb = quotedHead(b) ? '' : norm(stripLeadingArticle(titleHead(b)));
   if(ha && ha === nb) return true;
   if(hb && hb === na) return true;
   return false;
@@ -1653,7 +1665,7 @@ function renderShow(){
       ? ' <span class="upcoming-tag">Airs ' + esc(new Date(t).toLocaleDateString(undefined,{month:'short',day:'numeric'})) + '</span>'
       : '';
     html += '<div class="rowitem"><div class="grow" data-action="movie" data-ref="' + idx + '">'
-      + '<div class="t">' + esc(realTitle) + ' <span class="muted">(' + esc(f.year) + ')</span>'
+      + '<div class="t"><span class="tt">' + esc(realTitle) + ' <span class="muted">(' + esc(f.year) + ')</span></span>'
       + (epTag ? ' <span class="ep-tag">' + esc(epTag) + '</span>' : '') + when + '</div>'
       + '<div class="s">' + esc(f.director) + (f.genres ? ' · ' + esc(f.genres) : '') + '</div></div>'
       + badge + '</div>';
@@ -1671,7 +1683,7 @@ function renderWatchlist(){
     var widx = ref({ type:'watched', row:w });
     var didx = ref({ type:'wlremove', row:w });
     html += '<div class="rowitem"><div class="grow" data-action="movie" data-ref="' + midx + '">'
-      + '<div class="t">' + esc(w.title) + ' <span class="muted">(' + esc(w.year||'?') + ')</span></div>'
+      + '<div class="t"><span class="tt">' + esc(w.title) + ' <span class="muted">(' + esc(w.year||'?') + ')</span></span></div>'
       + '<div class="s">' + esc(w.source||'') + '</div></div>'
       + '<button class="btn btn-outline btn-sm" data-action="watched" data-ref="' + widx + '">✓ Watched</button>'
       + '<button class="btn btn-red btn-sm" data-action="wlremove" data-ref="' + didx + '">✕</button></div>';
@@ -1861,7 +1873,22 @@ function movieCardHTML(m){
   var directors = crewOf(m, ['Director']);
   var writers = crewOf(m, ['Screenplay','Writer','Story']).slice(0,4);
   var dps = crewOf(m, ['Director of Photography','Cinematography']).slice(0,2);
-  var cast = ((m.credits && m.credits.cast) || []).slice(0,12);
+  // Top billing plus anyone further down who is clearly a real, recognisable part.
+  //
+  // A flat slice(0,12) dropped Michael Keaton from Out of Sight -- he reprises Ray Nicolette from
+  // Jackie Brown uncredited, so TMDB bills him around 20th. Simply raising the cap drags in a long
+  // tail of one-line roles on every film, so instead the extras must have BOTH a named character
+  // and a real profile photo, which is a good proxy for "someone you'd recognise". Uncredited is
+  // not itself a reason to hide anyone.
+  var allCast = ((m.credits && m.credits.cast) || []);
+  var cast = allCast.slice(0, 12);
+  if(allCast.length > 12){
+    var extras = allCast.slice(12).filter(function(c){
+      return c.profile_path && (c.character || '').trim() &&
+             !/^(uncredited|self)$/i.test((c.character || '').trim());
+    }).slice(0, 6);
+    cast = cast.concat(extras);
+  }
   var studio = (m.production_companies||[]).slice(0,2).map(function(c){ return c.name; }).join(', ');
   var genres = (m.genres||[]).map(function(g){ return g.name; }).join(', ');
 
@@ -2385,7 +2412,7 @@ function filmRow(mv, sub){
     right = watchlistToggleHTML(mv.title, y, 'person drawer', true);
   }
   return '<div class="rowitem"><div class="grow" data-action="movie" data-ref="' + midx + '">'
-    + '<div class="t">' + esc(mv.title) + ' <span class="muted">(' + esc(y||'?') + ')</span></div>'
+    + '<div class="t"><span class="tt">' + esc(mv.title) + ' <span class="muted">(' + esc(y||'?') + ')</span></span></div>'
     + '<div class="s">' + esc(sub||'') + '</div></div>' + right + '</div>';
 }
 // How significant a crew job is, for deciding what to lead with. Lower sorts first.
@@ -3450,7 +3477,7 @@ function wlSearch(){
     arr.forEach(function(m){
       var y = (m.release_date||'').slice(0,4);
       var idx = ref({ type:'wladdclear', title:m.title, year:y?Number(y):null, source:'manual add' });
-      html += '<div class="rowitem"><div class="grow"><div class="t">' + esc(m.title) + ' <span class="muted">(' + esc(y||'?') + ')</span></div></div>'
+      html += '<div class="rowitem"><div class="grow"><div class="t"><span class="tt">' + esc(m.title) + ' <span class="muted">(' + esc(y||'?') + ')</span></span></div></div>'
         + '<button class="btn btn-outline btn-sm" data-action="wladdclear" data-ref="' + idx + '">+ Add</button></div>';
     });
     el('wlSearchOut').innerHTML = html;
