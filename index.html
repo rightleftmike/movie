@@ -3570,7 +3570,7 @@ function sendFeedback(){
   SUPA.from('feedback').insert({ user_id: ME.id, message: msg.slice(0,4000) }).then(function(res){
     if(res.error){ out.innerHTML = '<span style="color:var(--red)">Could not send: ' + esc(res.error.message) + '</span>'; return; }
     ta.value = '';
-    out.innerHTML = '<span style="color:var(--green)">Got it — thank you. Genuinely read, every one.</span>';
+    out.innerHTML = '<span style="color:var(--green)">Got it — thank you.</span>';
     track('feedback_sent', {});
   }).catch(function(e){ out.innerHTML = '<span style="color:var(--red)">Could not send: ' + esc(e.message) + '</span>'; });
 }
