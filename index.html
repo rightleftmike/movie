@@ -724,7 +724,23 @@ function decadeLabel(year){ return year ? (Math.floor(Number(year)/10)*10) + 's'
 
 /* ================= UTILS ================= */
 function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
-function norm(t){ return String(t||'').toLowerCase().replace(/&/g,'and').replace(/[^a-z0-9]/g,''); }
+// Spelled-out numbers vs digits: the episode sheet writes "Oceans 11" where TMDB has
+// "Ocean's Eleven", "Ocean's Twelve" vs "Oceans 12", and so on. Folding both to digits makes
+// those the same string instead of a near-miss that has to be rescued by fuzzy matching.
+var NUM_WORDS = { one:'1', two:'2', three:'3', four:'4', five:'5', six:'6', seven:'7', eight:'8',
+  nine:'9', ten:'10', eleven:'11', twelve:'12', thirteen:'13', fourteen:'14', fifteen:'15',
+  sixteen:'16', seventeen:'17', eighteen:'18', nineteen:'19', twenty:'20',
+  i:'1', ii:'2', iii:'3', iv:'4', v:'5', vi:'6', vii:'7', viii:'8', ix:'9', x:'10' };
+function foldNumbers(t){
+  return String(t||'').replace(/\b[a-z]+\b/gi, function(w){
+    var k = w.toLowerCase();
+    return Object.prototype.hasOwnProperty.call(NUM_WORDS, k) ? NUM_WORDS[k] : w;
+  });
+}
+function norm(t){ return foldNumbers(String(t||'').toLowerCase().replace(/&/g,'and')).replace(/[^a-z0-9]/g,''); }
+// The part of a title before its subtitle. "Terminator 2: Judgment Day" -> "Terminator 2".
+// Only real separators count -- a colon, en/em dash, or a spaced hyphen.
+function titleHead(t){ return String(t||'').split(/\s*[:\u2013\u2014]\s*|\s+-\s+/)[0]; }
 // The hand-maintained episode sheet doesn't always match TMDB's exact canonical title -- e.g. the
 // sheet has "Terminator" where TMDB's title is "The Terminator", and "Terminator 2" where TMDB's
 // is "Terminator 2: Judgment Day". Plain norm()===norm() comparisons silently miss these, which
@@ -736,7 +752,12 @@ function titleMatch(a, b){
   var na = norm(stripLeadingArticle(a)), nb = norm(stripLeadingArticle(b));
   if(!na || !nb) return false;
   if(na === nb) return true;
-  return (na.length > 3 && nb.indexOf(na) === 0) || (nb.length > 3 && na.indexOf(nb) === 0);
+  // Subtitle-tolerant: one side may carry a subtitle the other omits, but the shared part must be
+  // the WHOLE of the other title and must end where the subtitle begins.
+  var ha = norm(stripLeadingArticle(titleHead(a))), hb = norm(stripLeadingArticle(titleHead(b)));
+  if(ha && ha === nb) return true;
+  if(hb && hb === na) return true;
+  return false;
 }
 function baseEpisodeTitle(raw){
   // Strips revisit-episode wrapping so "Heat (\"The Re-Heat\")" / "The Re-Departed" resolve
@@ -1308,13 +1329,39 @@ function tmdbPerson(id){
   if(personCache[id]) return Promise.resolve(personCache[id]);
   return tmdb('person/' + id, { append_to_response: 'combined_credits' }).then(function(p){ personCache[id]=p; return p; });
 }
+function scoreCandidate(m, title, year){
+  var want = norm(stripLeadingArticle(title));
+  var got  = norm(stripLeadingArticle(m.title || ''));
+  var gotY = Number((m.release_date || '').slice(0, 4));
+  var score = 0;
+  if(want && got === want) score += 1000;                       // same film, spelled the same
+  else if(titleMatch(title, m.title || '')) score += 400;       // subtitle variant
+  else if(want && got && (got.indexOf(want) === 0 || want.indexOf(got) === 0)) score += 60;
+  if(year && gotY){
+    if(gotY === Number(year)) score += 300;
+    else if(Math.abs(gotY - Number(year)) <= 1) score += 120;
+    else score -= 200;                                          // wrong year is strong evidence
+  }
+  // Recognition, capped so it breaks ties without ever outweighing a real title match.
+  score += Math.min(m.vote_count || 0, 20000) / 100;
+  return score;
+}
+function pickBest(arr, title, year){
+  if(!arr || !arr.length) return null;
+  var best = null, bestScore = -Infinity;
+  for(var i = 0; i < arr.length; i++){
+    var sc = scoreCandidate(arr[i], title, year);
+    if(sc > bestScore){ bestScore = sc; best = arr[i]; }
+  }
+  return best;
+}
 function findMovie(title, year){
   var params = { query: title };
   if(year) params.year = year;
   return tmdb('search/movie', params).then(function(res){
     var arr = res.results || [];
-    if(!arr.length && year){ return tmdb('search/movie', { query: title }).then(function(r2){ return (r2.results||[])[0] || null; }); }
-    return arr[0] || null;
+    if(!arr.length && year){ return tmdb('search/movie', { query: title }).then(function(r2){ return pickBest(r2.results || [], title, null); }); }
+    return pickBest(arr, title, year);
   });
 }
 function auditRW(){
