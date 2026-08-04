@@ -258,6 +258,7 @@ label{font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:.0
 .depth-nudge .btn{margin-top:10px}
 /* Deliberately understated: present on every screen, but it should read as a footnote, not a
    banner. Same size and colour as the surrounding disclaimer -- only the underline marks it. */
+.upcoming-tag{display:inline-block;margin-left:6px;font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--gold);border:1px solid var(--gold-dim);border-radius:6px;padding:1px 6px;vertical-align:middle}
 .install-steps{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-top:10px;font-size:12.5px;color:var(--dim);line-height:1.65}
 .install-steps b{color:var(--txt)}
 .foot-link{color:var(--dim);text-decoration:underline;cursor:pointer}
@@ -381,8 +382,8 @@ body.preauth header, body.preauth #appWrap{display:none!important}
     <button class="btn btn-gold" data-action="tonight">🍿 Watch Tonight</button>
   </div>
   <div class="tabs" id="tabs">
-    <div class="tab" data-action="tab" data-tab="show"><i data-lucide="clapperboard"></i> Show List <span class="count" id="cShow">0</span></div>
-    <div class="tab on" data-action="tab" data-tab="ratings"><i data-lucide="star"></i> My Ratings <span class="count" id="cRatings">0</span></div>
+    <div class="tab on" data-action="tab" data-tab="show"><i data-lucide="clapperboard"></i> Show List <span class="count" id="cShow">0</span></div>
+    <div class="tab" data-action="tab" data-tab="ratings"><i data-lucide="star"></i> My Ratings <span class="count" id="cRatings">0</span></div>
     <div class="tab" data-action="tab" data-tab="suggest"><i data-lucide="sparkles"></i> Suggest</div>
     <div class="tab" data-action="tab" data-tab="people"><i data-lucide="users"></i> Following <span class="count" id="cPeople">0</span></div>
     <div class="tab" data-action="tab" data-tab="watchlist"><i data-lucide="bookmark"></i> Watchlist <span class="count" id="cWl">0</span></div>
@@ -396,7 +397,7 @@ body.preauth header, body.preauth #appWrap{display:none!important}
     <div id="searchResults"></div>
   </div>
 
-  <div class="panel on" id="p-ratings">
+  <div class="panel" id="p-ratings">
     <div class="statsbar" id="statsBar"></div>
     <div class="controls">
       <select id="fSort"><option value="recent">Sort: recent</option><option value="az">Sort: A–Z</option></select>
@@ -422,11 +423,11 @@ body.preauth header, body.preauth #appWrap{display:none!important}
     <div id="sugOut"><div class="empty-state"><div class="ei">✨</div><div class="eh">Pick a mode above, then tap Get suggestions</div><div class="es">Suggestions are tailored to your ratings and notes -- the more you rate, the better they get.</div></div></div>
   </div>
 
-  <div class="panel" id="p-show">
+  <div class="panel on" id="p-show">
     <h2>Episode List <span class="muted" id="showCounts"></span></h2>
     <div class="controls">
       <input type="text" id="showQ" placeholder="Filter episodes…" style="flex:1;min-width:150px">
-      <select id="showSort"><option value="old">Oldest episodes</option><option value="new">Newest episodes</option><option value="az">A–Z</option></select>
+      <select id="showSort"><option value="new">Newest episodes</option><option value="old">Oldest episodes</option><option value="az">A–Z</option></select>
       <select id="showGuest"><option value="">All hosts/guests</option></select>
       <label style="margin:0;display:flex;align-items:center;gap:6px;text-transform:none;font-size:13px;cursor:pointer"><input type="checkbox" id="showUnrated" style="width:auto"> Unrated only</label>
     </div>
@@ -690,7 +691,7 @@ function refreshPersonDrawer(){
    Back button returns you to the list you were just looking at (Show List / Suggest / My
    Ratings / etc.) instead of leaving the app entirely. NAV_REPLAY guards against re-pushing
    a new entry while we're already replaying one from a popstate event. */
-var CURRENT_TAB = 'ratings'; // matches the panel with class "on" in the initial HTML
+var CURRENT_TAB = 'show'; // matches the panel with class "on" in the initial HTML
 var NAV_REPLAY = false;
 var NAV_INITED = false;
 function navPushTab(tab){
@@ -1533,8 +1534,24 @@ function renderShow(){
   var guestSel = el('showGuest') ? el('showGuest').value : '';
   var rated = 0, html = '', shown = 0;
   var list = RW.slice();
-  if(srt==='new') list.reverse();
+  function epTime(f){
+    var t = f.airDate ? new Date(f.airDate).getTime() : NaN;
+    return isNaN(t) ? null : t;
+  }
+  function byDate(dir){
+    return function(a,b){
+      var ta = epTime(a), tb = epTime(b);
+      // Undated rows sink to the bottom either way rather than jumping to the top.
+      if(ta === null && tb === null) return (parseInt(a.epNo,10)||0) - (parseInt(b.epNo,10)||0);
+      if(ta === null) return 1;
+      if(tb === null) return -1;
+      if(ta !== tb) return dir * (ta - tb);
+      return dir * ((parseInt(a.epNo,10)||0) - (parseInt(b.epNo,10)||0));
+    };
+  }
+  if(srt==='new') list.sort(byDate(-1));
   else if(srt==='az') list.sort(function(a,b){ return a.title.localeCompare(b.title); });
+  else list.sort(byDate(1));
   for(var i=0;i<list.length;i++){
     var f = list[i], mine = myFind(f.title, f.year);
     if(mine) rated++;
@@ -1544,8 +1561,13 @@ function renderShow(){
     shown++;
     var idx = ref({ type:'movie', title:f.title, year:f.year });
     var badge = ratingBadgeHTML(f.title, f.year);
+    var t = f.airDate ? new Date(f.airDate).getTime() : NaN;
+    var upcoming = !isNaN(t) && t > Date.now();
+    var when = upcoming
+      ? ' <span class="upcoming-tag">Airs ' + esc(new Date(t).toLocaleDateString(undefined,{month:'short',day:'numeric'})) + '</span>'
+      : '';
     html += '<div class="rowitem"><div class="grow" data-action="movie" data-ref="' + idx + '">'
-      + '<div class="t">' + esc(f.title) + ' <span class="muted">(' + esc(f.year) + ')</span></div>'
+      + '<div class="t">' + esc(f.title) + ' <span class="muted">(' + esc(f.year) + ')</span>' + when + '</div>'
       + '<div class="s">' + esc(f.director) + (f.genres ? ' · ' + esc(f.genres) : '') + '</div></div>'
       + badge + '</div>';
   }
@@ -3516,7 +3538,18 @@ el('wlq').addEventListener('keydown', function(e){ if(e.key==='Enter') wlSearch(
 el('pq').addEventListener('keydown', function(e){ if(e.key==='Enter') peopleSearch(); });
 el('showQ').addEventListener('input', renderShow);
 el('showUnrated').addEventListener('change', renderShow);
-el('showSort').addEventListener('change', renderShow);
+el('showSort').addEventListener('change', function(){
+  try{ localStorage.setItem('rw_show_sort', el('showSort').value); }catch(_){}
+  renderShow();
+});
+// Restore a previously chosen sort. Runs before the first paint, and falls back to the markup
+// default ("new") if nothing is stored or localStorage is unavailable (private mode, etc.).
+(function(){
+  try{
+    var saved = localStorage.getItem('rw_show_sort');
+    if(saved && ['new','old','az'].indexOf(saved) >= 0) el('showSort').value = saved;
+  }catch(_){}
+})();
 el('showGuest').addEventListener('change', renderShow);
 el('peopleSort').addEventListener('change', renderPeople);
 el('fSort').addEventListener('change', renderRatings);
