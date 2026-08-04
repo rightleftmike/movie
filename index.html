@@ -259,6 +259,10 @@ label{font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:.0
 /* Deliberately understated: present on every screen, but it should read as a footnote, not a
    banner. Same size and colour as the surrounding disclaimer -- only the underline marks it. */
 .ep-tag{display:inline-block;margin-left:6px;font-size:10px;letter-spacing:.05em;text-transform:uppercase;color:var(--dim);border:1px solid var(--line);border-radius:6px;padding:1px 6px;vertical-align:middle}
+.gw-icon{font-size:26px}
+.gw-head{font-family:'Bebas Neue',sans-serif;font-size:21px;color:var(--gold);letter-spacing:.03em;margin-top:4px}
+.gw-sub{font-size:13px;color:var(--dim);line-height:1.55;margin:8px auto 0;max-width:310px}
+.gw-btns{display:flex;gap:8px;justify-content:center;margin-top:16px;flex-wrap:wrap}
 .guest-only{display:none}
 body.guest .guest-only{display:inline-flex}
 body.guest .auth-only{display:none!important}
@@ -554,6 +558,7 @@ body.preauth header, body.preauth #appWrap{display:none!important}
 <div class="modal-veil" id="modalVeil"><div class="modal" id="modal"></div></div>
 <div class="modal-veil" id="voiceVeil"><div class="modal voice-modal" id="voiceModal"></div></div>
 <div class="modal-veil" id="ageVeil"><div class="modal" id="ageModal" style="max-width:380px"></div></div>
+<div class="modal-veil" id="gwVeil"><div class="modal" id="gwModal" style="max-width:400px;text-align:center"></div></div>
 <div class="modal-veil" id="lbVeil" data-action="closelightbox" style="z-index:90"><img id="lbImg" style="max-width:92vw;max-height:92vh;display:block;margin:40px auto;border-radius:8px"></div>
 <div class="mini-player" id="miniPlayer">
   <div class="mp-row1">
@@ -1068,24 +1073,22 @@ var GUEST = false;
 // Keyed by the same data-action strings the delegated click handler dispatches on, so a new
 // button is covered the moment its action name is added here -- nothing to wire per-button.
 var GUEST_BLOCKED = {
-  rate:'Sign in to rate this one.', quickrate:'Sign in to rate this one.',
-  saverating:'Sign in to save your rating.', deleterating:'Sign in to manage your ratings.',
-  voicerate:'Sign in to rate this one.', voicerateform:'Sign in to rate this one.',
-  refine:'Sign in to use the AI features.', userefined:'Sign in to use the AI features.',
-  userefinedall:'Sign in to use the AI features.', mic:'Sign in to dictate notes.',
-  castchip:'Sign in to save a standout performance.', togglefollow:'Sign in to follow people.',
-  wladd:'Sign in to keep a watchlist.', wladdclear:'Sign in to keep a watchlist.',
-  wlremove:'Sign in to keep a watchlist.', watched:'Sign in to keep a watchlist.',
-  follow:'Sign in to follow actors, writers and directors.',
-  followclear:'Sign in to follow actors, writers and directors.',
-  unfollow:'Sign in to follow actors, writers and directors.',
-  suggest:'Sign in to get suggestions built from your own taste.',
-  tonight:'Sign in to get suggestions built from your own taste.',
-  charphoto:'Sign in to look up stills.', export:'Sign in to export your data.',
-  sendfeedback:'Sign in to send a message.', savename:'Sign in first.',
-  saveprofile:'Sign in first.', deleteaccount:'Sign in first.', signout:'Sign in first.',
-  loadclickstats:'Sign in first.', deleteconfirm:'Sign in first.', deletecancel:'Sign in first.',
-  auditrw:'Sign in first.'
+  rate:'Rating a film', quickrate:'Rating a film', saverating:'Saving a rating',
+  deleterating:'Managing your ratings', voicerate:'Rating a film', voicerateform:'Rating a film',
+  refine:'Polishing notes with AI', userefined:'Polishing notes with AI',
+  userefinedall:'Polishing notes with AI', mic:'Dictating notes',
+  castchip:'Saving a standout performance', togglefollow:'Following people',
+  wladd:'Keeping a watchlist', wladdclear:'Keeping a watchlist',
+  wlremove:'Keeping a watchlist', watched:'Keeping a watchlist',
+  follow:'Following actors, writers and directors',
+  followclear:'Following actors, writers and directors',
+  unfollow:'Following actors, writers and directors',
+  suggest:'Getting suggestions built from your taste',
+  tonight:'Getting suggestions built from your taste',
+  charphoto:'Looking up a still', export:'Exporting your data',
+  sendfeedback:'Sending a message', savename:'That', saveprofile:'That',
+  deleteaccount:'That', signout:'That', loadclickstats:'That',
+  deleteconfirm:'That', deletecancel:'That', auditrw:'That'
 };
 
 function enterGuest(){
@@ -1102,16 +1105,34 @@ function enterGuest(){
   track('guest_entered', {});
 }
 
-// Sends a guest back to the sign-in card with a line saying what they were reaching for. Resets
-// BOOTED so that a successful sign-in runs the full loadCloud()+loadSheet() boot rather than
-// silently skipping it because the guest pass already flipped the flag.
-function requireSignIn(why){
+// A guest who taps something they can't do gets an explanation they can dismiss -- not a silent
+// eject back to the login screen. Closing it leaves them exactly where they were, still browsing.
+function requireSignIn(what){
+  var phrase = what || 'That';
+  el('gwModal').innerHTML = '<button class="modal-x" data-action="gwclose" title="Close">✕</button>'
+    + '<div class="gw-icon">🔒</div>'
+    + '<div class="gw-head">You’ll need an account for that</div>'
+    + '<div class="gw-sub">' + esc(phrase) + ' has to be saved to something, so it needs an account. '
+    + 'Everything else stays open — keep browsing as long as you like.</div>'
+    + '<div class="gw-sub" style="margin-top:8px">It’s free, there’s no paid tier, and you can export or delete everything at any time.</div>'
+    + '<div class="gw-btns">'
+    + '<button class="btn btn-gold btn-sm" data-action="gwsignin">Sign in</button>'
+    + '<button class="btn btn-outline btn-sm" data-action="gwclose">Keep looking around</button>'
+    + '</div>';
+  el('gwVeil').classList.add('open');
+  track('guest_hit_gate', { reason: phrase });
+}
+function closeGuestWall(){ el('gwVeil').classList.remove('open'); }
+
+// The actual hand-off to the sign-in card. Resets BOOTED so a successful sign-in runs the full
+// loadCloud()+loadSheet() boot rather than skipping it because the guest pass already set the flag.
+function goToSignIn(msg){
+  closeGuestWall();
   GUEST = false; BOOTED = false;
   document.body.classList.remove('guest');
   document.body.classList.add('preauth');
   showGate('login');
-  el('authMsg').innerHTML = '<span style="color:var(--gold)">' + esc(why || 'Sign in to do that.') + '</span>';
-  track('guest_hit_gate', { reason: why || '' });
+  el('authMsg').innerHTML = '<span style="color:var(--gold)">' + esc(msg || '') + '</span>';
 }
 
 function guestNoticeHTML(headline, sub){
@@ -3805,12 +3826,21 @@ document.addEventListener('click', function(ev){
   else if(action==='giftticket') openGift(STRIPE_GIFT_TICKET, 'ticket');
   else if(action==='giftscreening') openGift(STRIPE_GIFT_SCREENING, 'screening');
   else if(action==='guest'){ ev.preventDefault(); enterGuest(); }
-  else if(action==='guestsignin'){ ev.preventDefault(); requireSignIn('Free, and your ratings stay yours — export or delete everything at any time.'); }
+  else if(action==='gwclose'){ ev.preventDefault(); closeGuestWall(); }
+  else if(action==='gwsignin'){ ev.preventDefault(); goToSignIn('Free, and your ratings stay yours — export or delete everything at any time.'); }
+  else if(action==='guestsignin'){ ev.preventDefault(); goToSignIn('Free, and your ratings stay yours — export or delete everything at any time.'); }
   else if(action==='magiclink') sendMagicLink();
   else if(action==='google') signInGoogle();
   else if(action==='signout') signOut();
   else if(action==='saveprofile') saveProfile();
   else if(action==='savename') saveDisplayName();
+});
+// Dismiss the guest wall by clicking the backdrop or pressing Escape. The veil deliberately has no
+// data-action of its own -- delegation would treat a click on the modal's own text as a backdrop
+// click and close it mid-read.
+el('gwVeil').addEventListener('click', function(ev){ if(ev.target === el('gwVeil')) closeGuestWall(); });
+document.addEventListener('keydown', function(ev){
+  if(ev.key === 'Escape' && el('gwVeil').classList.contains('open')) closeGuestWall();
 });
 el('q').addEventListener('input', updateAC);
 el('q').addEventListener('keydown', function(e){ if(e.key==='Enter') doSearch(); });
