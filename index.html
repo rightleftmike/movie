@@ -258,6 +258,7 @@ label{font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:.0
 .depth-nudge .btn{margin-top:10px}
 /* Deliberately understated: present on every screen, but it should read as a footnote, not a
    banner. Same size and colour as the surrounding disclaimer -- only the underline marks it. */
+.ep-tag{display:inline-block;margin-left:6px;font-size:10px;letter-spacing:.05em;text-transform:uppercase;color:var(--dim);border:1px solid var(--line);border-radius:6px;padding:1px 6px;vertical-align:middle}
 .upcoming-tag{display:inline-block;margin-left:6px;font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--gold);border:1px solid var(--gold-dim);border-radius:6px;padding:1px 6px;vertical-align:middle}
 .install-steps{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-top:10px;font-size:12.5px;color:var(--dim);line-height:1.65}
 .install-steps b{color:var(--txt)}
@@ -744,7 +745,31 @@ function baseEpisodeTitle(raw){
   var paren = s.indexOf('(');
   if(paren > 0) s = s.slice(0, paren).trim();
   s = s.replace(/^(the\s+)?(re|three|two)-/i, function(whole, the){ return the || ''; });
+  // Live-show episodes append the venue after a colon: "A Few Good Men: Live from L.A.".
+  // Deliberately anchored on the words "Live from"/"Live" rather than stripping everything after
+  // any colon, which would mangle real titles like "Mission: Impossible".
+  s = s.replace(/[:\u2013-]\s*live(\s+from\b.*)?$/i, '');
   return s.trim();
+}
+// The distinguishing part of an episode title, e.g. "The Re-Heat" from Heat ("The Re-Heat"), or
+// "Live from L.A." from They Live (Live from L.A.). Returns '' when there's nothing worth showing
+// -- notably a bare year, which the row already displays next to the title anyway.
+function episodeTagFor(raw){
+  var s = String(raw||'').trim();
+  var open = s.indexOf('('), close = s.lastIndexOf(')');
+  if(open > -1 && close > open){
+    // First "(" to LAST ")" rather than a lazy match, because some titles nest brackets:
+    // A Few Good Men: Live from L.A. ("A Few Good (Re)Men") would otherwise cut at "A Few Good (Re".
+    var inner = s.slice(open + 1, close).replace(/^[\u201c\u201d"']+|[\u201c\u201d"']+$/g, '').trim();
+    if(/^\d{4}$/.test(inner)) return '';          // "Batman (1989)" -- the year is already shown
+    // A couple of entries carry a whole sentence in brackets (the 1999 hodgepodge episode lists
+    // three films). A tag that long stops being a tag, so drop it rather than wrap the row.
+    if(inner.length > 28) return '';
+    return inner;
+  }
+  // Prefix forms carry no parenthetical: "The Re-Departed", "Three-Heat".
+  if(/^(the\s+)?(re|three|two)-/i.test(s)) return 'Revisit';
+  return '';
 }
 function toast(msg, kind){
   var d = document.createElement('div');
@@ -1097,6 +1122,11 @@ function signOut(){
 }
 
 /* ================= SHEET ================= */
+// Trailing annotation marks (the sheet uses "*"; the others are defensive) plus any doubled
+// whitespace, so two spellings of the same person collapse to one entry.
+function cleanPersonName(v){
+  return String(v || '').replace(/[*\u2020\u2021#]+\s*$/, '').replace(/\s+/g, ' ').trim();
+}
 function loadSheet(){
   // Our mirror, not Google. Falls back internally to a stale cached copy if the upstream sheet is
   // unreachable, so a Google outage or a sharing change degrades to "slightly old list" rather
@@ -1133,8 +1163,13 @@ function loadSheet(){
       var epNo = iE>=0 ? (rows[j][iE]||'').trim() : '';
       var key = epNo ? ('ep'+epNo) : (norm(t)+'|'+y);
       if(seen[key]) continue; seen[key]=1;
-      var guests = [iGu1,iGu2,iGu3,iGu4].map(function(gi){ return gi>=0 ? (rows[j][gi]||'').trim() : ''; }).filter(function(g){ return g; });
-      out.push({ title:t, year:y, director:(rows[j][iD]||'').trim(), genres:(rows[j][iG]||'').replace(/;/g,', ').replace(/, $/,'').trim(), epNo:epNo, airDate:(iR>=0?(rows[j][iR]||'').trim():''), host:(iH>=0?(rows[j][iH]||'').trim():''), guests:guests });
+      // The source sheet marks some appearances with a trailing asterisk -- its own legend reads
+    // "* = host appears later on in the episode". That distinction is never surfaced anywhere in
+    // this app (host/guests are only ever used to build and match the filter), so all the asterisk
+    // achieved was splitting one person into two dropdown rows: "Mallory Rubin (38)" sitting apart
+    // from "Mallory Rubin* (1)". Stripped here so each person appears once with a correct count.
+    var guests = [iGu1,iGu2,iGu3,iGu4].map(function(gi){ return gi>=0 ? cleanPersonName(rows[j][gi]) : ''; }).filter(function(g){ return g; });
+      out.push({ title:t, year:y, director:(rows[j][iD]||'').trim(), genres:(rows[j][iG]||'').replace(/;/g,', ').replace(/, $/,'').trim(), epNo:epNo, airDate:(iR>=0?(rows[j][iR]||'').trim():''), host:(iH>=0?cleanPersonName(rows[j][iH]):''), guests:guests });
     }
     if(out.length < 50) throw new Error('too few rows parsed');
     RW = out; sheetLive = true;
@@ -1553,21 +1588,26 @@ function renderShow(){
   else if(srt==='az') list.sort(function(a,b){ return a.title.localeCompare(b.title); });
   else list.sort(byDate(1));
   for(var i=0;i<list.length;i++){
-    var f = list[i], mine = myFind(f.title, f.year);
+    var f = list[i];
+    var realTitle = baseEpisodeTitle(f.title) || f.title;
+    var mine = myFind(realTitle, f.year);
     if(mine) rated++;
     if(unonly && mine) continue;
     if(guestSel && f.host!==guestSel && (f.guests||[]).indexOf(guestSel)<0) continue;
-    if(q && norm(f.title).indexOf(q)<0 && norm(f.director).indexOf(q)<0) continue;
+    // Search both spellings, so typing "Departed" finds "The Re-Departed" and vice versa.
+    if(q && norm(f.title).indexOf(q)<0 && norm(realTitle).indexOf(q)<0 && norm(f.director).indexOf(q)<0) continue;
     shown++;
-    var idx = ref({ type:'movie', title:f.title, year:f.year });
-    var badge = ratingBadgeHTML(f.title, f.year);
+    var idx = ref({ type:'movie', title:realTitle, year:f.year });
+    var badge = ratingBadgeHTML(realTitle, f.year);
+    var epTag = episodeTagFor(f.title);
     var t = f.airDate ? new Date(f.airDate).getTime() : NaN;
     var upcoming = !isNaN(t) && t > Date.now();
     var when = upcoming
       ? ' <span class="upcoming-tag">Airs ' + esc(new Date(t).toLocaleDateString(undefined,{month:'short',day:'numeric'})) + '</span>'
       : '';
     html += '<div class="rowitem"><div class="grow" data-action="movie" data-ref="' + idx + '">'
-      + '<div class="t">' + esc(f.title) + ' <span class="muted">(' + esc(f.year) + ')</span>' + when + '</div>'
+      + '<div class="t">' + esc(realTitle) + ' <span class="muted">(' + esc(f.year) + ')</span>'
+      + (epTag ? ' <span class="ep-tag">' + esc(epTag) + '</span>' : '') + when + '</div>'
       + '<div class="s">' + esc(f.director) + (f.genres ? ' · ' + esc(f.genres) : '') + '</div></div>'
       + badge + '</div>';
   }
