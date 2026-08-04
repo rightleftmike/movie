@@ -1685,7 +1685,7 @@ function renderShow(){
     html += '<div class="rowitem"><div class="grow" data-action="movie" data-ref="' + idx + '">'
       + '<div class="t"><span class="tt">' + esc(realTitle) + ' <span class="muted">(' + esc(f.year) + ')</span></span>'
       + (epTag ? ' <span class="ep-tag">' + esc(epTag) + '</span>' : '') + when + '</div>'
-      + '<div class="s">' + esc(f.director) + (f.genres ? ' · ' + esc(f.genres) : '') + '</div></div>'
+      + '<div class="s">' + [f.director, f.genres].filter(Boolean).map(esc).join(' · ') + '</div></div>'
       + badge + '</div>';
   }
   el('showCounts').textContent = '· ' + rated + ' rated / ' + (RW.length - rated) + ' unrated';
