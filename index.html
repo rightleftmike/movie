@@ -2388,14 +2388,59 @@ function filmRow(mv, sub){
     + '<div class="t">' + esc(mv.title) + ' <span class="muted">(' + esc(y||'?') + ')</span></div>'
     + '<div class="s">' + esc(sub||'') + '</div></div>' + right + '</div>';
 }
+// How significant a crew job is, for deciding what to lead with. Lower sorts first.
+var JOB_RANK = { 'Director':0, 'Screenplay':1, 'Writer':1, 'Story':1, 'Director of Photography':2 };
+var KEPT_JOBS = ['Director','Screenplay','Writer','Story','Director of Photography'];
+// Builds the role line for one person on one film from EVERY credit they hold on it.
+//
+// The old code walked cast first and claimed each film with a `seen` flag, so a crew credit was
+// discarded whenever the same person also appeared on screen. That is why Steven Soderbergh read
+// as "Vault-Bombing Thief (uncredited)" on Ocean's Eleven -- his cameo won and Director was thrown
+// away. Within crew it also kept whichever job came first in TMDB's arbitrary order, which is how
+// Ocean's Twelve showed "Director of Photography" (he shoots his own films as Peter Andrews)
+// rather than Director.
+//
+// Now every credit is collected, crew jobs are ordered by significance, and an acting part is
+// appended rather than replacing the job -- "Director · as Vault-Bombing Thief" is both correct
+// and more interesting than either half alone.
+function roleLabel(jobs, character){
+  var uniq = [], i;
+  jobs.sort(function(a,b){
+    var ra = JOB_RANK[a], rb = JOB_RANK[b];
+    return (ra === undefined ? 99 : ra) - (rb === undefined ? 99 : rb);
+  });
+  for(i=0;i<jobs.length;i++) if(uniq.indexOf(jobs[i]) < 0) uniq.push(jobs[i]);
+  // "Writer" and "Screenplay" on the same film say the same thing twice.
+  if(uniq.indexOf('Screenplay') >= 0) uniq = uniq.filter(function(j){ return j !== 'Writer' && j !== 'Story'; });
+  // With an acting part as well, lead with the single most senior job -- "Director · Director of
+  // Photography · as Vault-Bombing Thief (uncredited)" is accurate but unreadable in a narrow row.
+  var parts = uniq.slice(0, character ? 1 : 2);
+  if(character) parts.push(parts.length ? 'as ' + character : character);
+  return parts.join(' \u00b7 ');
+}
 function personDrawerHTML(p){
-  var credits = [], seen = {}, i;
+  var credits = [], i;
   var cc = p.combined_credits || {};
-  (cc.cast||[]).forEach(function(c){ if(c.media_type==='movie' && !seen[c.id]){ seen[c.id]=1; credits.push({ mv:c, role:c.character||'Actor' }); } });
+  var byFilm = {}, order = [];
+  function slot(c){
+    if(!byFilm[c.id]){ byFilm[c.id] = { mv:c, jobs:[], character:'' }; order.push(c.id); }
+    return byFilm[c.id];
+  }
+  (cc.cast||[]).forEach(function(c){
+    if(c.media_type !== 'movie') return;
+    var e = slot(c);
+    // Keep the meatiest-looking character string if TMDB lists several.
+    if((c.character||'').length > e.character.length) e.character = c.character || '';
+  });
   (cc.crew||[]).forEach(function(c){
-    if(c.media_type==='movie' && ['Director','Screenplay','Writer','Director of Photography'].indexOf(c.job)>=0){
-      if(!seen[c.id]){ seen[c.id]=1; credits.push({ mv:c, role:c.job }); }
-    }
+    if(c.media_type !== 'movie' || KEPT_JOBS.indexOf(c.job) < 0) return;
+    slot(c).jobs.push(c.job);
+  });
+  order.forEach(function(id){
+    var e = byFilm[id];
+    // A film where they neither acted nor held one of the kept crew jobs isn't worth a row.
+    if(!e.jobs.length && !e.character) return;
+    credits.push({ mv:e.mv, role: roleLabel(e.jobs, e.character) || 'Actor' });
   });
   // No separate "In Your Ratings" bucket -- every film row already shows the rating badge inline
   // (via filmRow, clickable to view/edit), so a rated film just surfaces under On The Rewatchables
