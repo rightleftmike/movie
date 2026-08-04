@@ -7,6 +7,10 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Rewatch Club">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="favicon-16.png">
+<link rel="manifest" href="manifest.json">
 <title>Rewatch Club — track the films you rewatch</title>
 <meta name="description" content="A fan-built tracker for The Rewatchables. Rate the films, keep notes, follow the actors and directors, and get suggestions built from your own taste. Free.">
 <link rel="canonical" href="https://rewatchclub.com/">
@@ -254,6 +258,8 @@ label{font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:.0
 .depth-nudge .btn{margin-top:10px}
 /* Deliberately understated: present on every screen, but it should read as a footnote, not a
    banner. Same size and colour as the surrounding disclaimer -- only the underline marks it. */
+.install-steps{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-top:10px;font-size:12.5px;color:var(--dim);line-height:1.65}
+.install-steps b{color:var(--txt)}
 .foot-link{color:var(--dim);text-decoration:underline;cursor:pointer}
 .foot-link:hover{color:var(--gold-dim)}
 .supporter-note b{color:var(--txt)}
@@ -457,6 +463,12 @@ body.preauth header, body.preauth #appWrap{display:none!important}
     <label>Display name (your Screening Room)</label>
     <div style="display:flex;gap:8px"><input type="text" id="setName" placeholder="Your name"><button class="btn btn-outline" data-action="savename">Save</button></div>
     <button class="btn btn-outline btn-sm" data-action="signout" style="margin-top:10px">Sign out</button>
+
+    <hr class="gold">
+    <h3>Add to your home screen</h3>
+    <div class="settings-note">Rewatch Club runs in the browser — there's nothing to download and no app store. Adding it to your home screen gives it its own icon and opens it full screen, without the browser bars.</div>
+    <div class="install-steps" id="installSteps"></div>
+
     <hr class="gold">
     <label>AI credits</label>
     <div class="kv" id="aiPlanStatus">Checking…</div>
@@ -889,6 +901,7 @@ function renderCreditPill(){
     + ' AI credits left this week \u00b7 resets ' + esc(creditResetLabel()) + '</span>';
 }
 function renderAiPlanStatus(){
+  renderInstallSteps();
   var box = el('aiPlanStatus'), upBox = el('creditNote');
   if(!box || !SUPA) return;
   if(!PROFILE){ box.textContent = 'Sign in to see your AI credits.'; if(upBox) upBox.style.display = 'none'; return; }
@@ -3123,6 +3136,39 @@ function runSuggest(){
     out.innerHTML = html + aiFooterHTML();
     track('suggestion_result_shown', { count: arr.length });
   }).catch(function(e){ out.innerHTML = aiErrorHTML(e); });
+}
+
+/* ================= ADD TO HOME SCREEN ================= */
+// Instructions rather than a prompt. iOS exposes no install API whatsoever -- a page cannot
+// trigger Add to Home Screen -- and the Android prompt requires a service worker, which this app
+// deliberately doesn't have (a cached app shell would risk serving a stale build after a deploy).
+// So the honest thing is to tell people where the button is, in a place they visit on purpose.
+function installStepsHTML(){
+  var ua = navigator.userAgent || '';
+  // Already installed: both the standard display-mode query and Apple's older non-standard flag.
+  var standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
+                || window.navigator.standalone === true;
+  if(standalone){
+    return '<span style="color:var(--green)">\u25cf You\u2019re already using the installed version.</span> Nothing else to do.';
+  }
+  var isIOS = /iPad|iPhone|iPod/.test(ua) && !window.MSStream;
+  var isAndroid = /Android/.test(ua);
+  if(isIOS){
+    // Add to Home Screen is a Safari feature on iOS; other browsers there don't reliably offer it.
+    return 'On your iPhone or iPad, open this in <b>Safari</b>, tap the <b>Share</b> button '
+         + '(the square with an arrow pointing up), scroll down, and choose <b>Add to Home Screen</b>.';
+  }
+  if(isAndroid){
+    return 'In <b>Chrome</b>, tap the <b>\u22ee</b> menu in the top right and choose '
+         + '<b>Add to Home screen</b> \u2014 it may say <b>Install app</b>.';
+  }
+  return 'You\u2019re on a desktop browser, so there\u2019s nothing to add here. On a phone, open '
+       + 'this page and use the browser menu: <b>Share \u2192 Add to Home Screen</b> on iPhone, or '
+       + 'the <b>\u22ee</b> menu \u2192 <b>Add to Home screen</b> on Android.';
+}
+function renderInstallSteps(){
+  var box = el('installSteps');
+  if(box) box.innerHTML = installStepsHTML();
 }
 
 /* ================= AI INPUT TRANSPARENCY & DEPTH NUDGES ================= */
