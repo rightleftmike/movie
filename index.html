@@ -7,7 +7,21 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Rewatch Club">
-<title>Rewatch Club</title>
+<title>Rewatch Club — track the films you rewatch</title>
+<meta name="description" content="A fan-built tracker for The Rewatchables. Rate the films, keep notes, follow the actors and directors, and get suggestions built from your own taste. Free.">
+<link rel="canonical" href="https://rewatchclub.com/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Rewatch Club">
+<meta property="og:url" content="https://rewatchclub.com/">
+<meta property="og:title" content="Rewatch Club — track the films you rewatch">
+<meta property="og:description" content="A fan-built tracker for The Rewatchables. Rate the films, keep notes, follow the actors and directors, and get suggestions built from your own taste. Free.">
+<meta property="og:image" content="https://rewatchclub.com/social.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Rewatch Club — track the films you rewatch">
+<meta name="twitter:description" content="A fan-built tracker for The Rewatchables. Rate the films, keep notes, follow the actors and directors, and get suggestions built from your own taste. Free.">
+<meta name="twitter:image" content="https://rewatchclub.com/social.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:ital,wght@0,400;0,500;0,700;1,400&display=swap" rel="stylesheet">
@@ -507,7 +521,8 @@ body.preauth header, body.preauth #appWrap{display:none!important}
     Rewatch Club is a fan-built, community-supported project and an unofficial companion for
     <b>The Rewatchables</b>. Not affiliated with, endorsed by, or sponsored by The Ringer or Spotify.
     Film data from TMDB.
-    <br><span class="foot-link" data-action="gotosupport">Chip in toward keeping this running</span>
+    <br><a class="foot-link" href="privacy.html">Privacy</a> · <a class="foot-link" href="terms.html">Terms</a>
+    · <span class="foot-link" data-action="gotosupport">Chip in toward keeping this running</span>
   </div>
 </div>
 
@@ -554,7 +569,7 @@ body.preauth header, body.preauth #appWrap{display:none!important}
     <div class="sub">A club for people who watch things twice. Sign in to keep your ratings, watchlist and follows.</div>
     <label>Email</label>
     <input type="text" id="authEmail" placeholder="you@example.com" autocomplete="email" inputmode="email">
-    <button class="btn btn-gold" data-action="magiclink">✉️ Send me a magic link</button>
+    <button class="btn btn-gold" data-action="magiclink">✉️ Send me a magic link</button><div style="margin-top:14px;font-size:11.5px;color:var(--dim);line-height:1.6">By signing in you agree to the <a href="terms.html">Terms</a> and <a href="privacy.html">Privacy Policy</a>. Your ratings and notes stay yours \u2014 export or delete everything at any time.</div>
     <div class="auth-sep">or</div>
     <button class="btn gbtn" data-action="google">Continue with Google</button>
     <div class="auth-msg" id="authMsg"></div>
@@ -2431,8 +2446,21 @@ function saveRating(){
     var tierMap = { 'All-timer':'all_timer', 'Loved':'loved', 'Liked':'liked', 'Meh':'meh', 'Disliked':'disliked' };
     var isRW = !!rwFind(d.title, d.year);
     track('movie_rated', { rating_tier: tierMap[d.rating] || d.rating, is_podcast_film: isRW, decade: decadeLabel(d.year) });
-    var filled = ['vibe','pulled_in','fav_actor','fav_scene','didnt_click','notes'].filter(function(k){ return d[k]; }).length;
-    if(filled) track('review_written', { fields_filled: filled, is_podcast_film: isRW });
+    var PROSE_FIELDS = ['vibe','pulled_in','fav_actor','fav_scene','didnt_click','notes'];
+    var used = PROSE_FIELDS.filter(function(k){ return d[k]; });
+    if(used.length){
+      // fav_actor is usually just a name, so it is counted but excluded from "real prose".
+      var proseChars = ['vibe','pulled_in','fav_scene','didnt_click','notes']
+        .reduce(function(n,k){ return n + (d[k] ? String(d[k]).trim().length : 0); }, 0);
+      track('review_written', {
+        fields_filled: used.length,
+        fields: used.join(','),
+        prose_chars: proseChars,
+        // The single number worth watching: did they write a sentence, not just fill a box.
+        wrote_real_prose: proseChars >= 80,
+        is_podcast_film: isRW
+      });
+    }
   })();
   req.then(function(res){
     if(res.error) throw new Error(res.error.message);
