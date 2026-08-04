@@ -754,10 +754,11 @@ function titleHead(t){ return String(t||'').split(/\s*[:\u2013\u2014]\s*|\s+-\s+
 // leading article, then also accept a clean prefix match in either direction (covers a dropped
 // subtitle) rather than requiring the two title strings to be byte-identical after normalizing.
 function stripLeadingArticle(t){ return String(t||'').replace(/^\s*(the|a|an)\s+/i, ''); }
-function titleMatch(a, b){
+// Returns 'exact', 'subtitle' or false -- callers need to know HOW confident the match is.
+function titleMatchKind(a, b){
   var na = norm(stripLeadingArticle(a)), nb = norm(stripLeadingArticle(b));
   if(!na || !nb) return false;
-  if(na === nb) return true;
+  if(na === nb) return 'exact';
   // Subtitle-tolerant: one side may carry a subtitle the other omits, but the shared part must be
   // the WHOLE of the other title and must end where the subtitle begins.
   // A head wrapped in quotes is naming ANOTHER work, not being it: "'Ocean's Eleven': The Look of
@@ -767,9 +768,26 @@ function titleMatch(a, b){
   function quotedHead(t){ return /^\s*['"\u2018\u201c]/.test(String(t||'')); }
   var ha = quotedHead(a) ? '' : norm(stripLeadingArticle(titleHead(a)));
   var hb = quotedHead(b) ? '' : norm(stripLeadingArticle(titleHead(b)));
-  if(ha && ha === nb) return true;
-  if(hb && hb === na) return true;
+  if(ha && ha === nb) return 'subtitle';
+  if(hb && hb === na) return 'subtitle';
   return false;
+}
+function titleMatch(a, b){ return !!titleMatchKind(a, b); }
+// Title and year together, with the year requirement scaled to how strong the title match is.
+//
+// "Commando: Retribution" and "Predator: The Unseen Arnold" are behind-the-scenes featurettes with
+// NO release date. The subtitle rule reduces them to "Commando" and "Predator", which match real
+// episodes, and yearsMatch() returns true whenever either year is missing -- so both were filed
+// under On The Rewatchables for Schwarzenegger. Same class as the Ocean's Eleven making-of, but
+// unquoted, so the quoted-head guard doesn't catch it.
+//
+// An EXACT title match can tolerate a missing year: the title alone is strong evidence. A subtitle
+// match is the weaker signal, so it has to be corroborated by a year that is both known and agrees.
+function titleYearMatch(a, ya, b, yb){
+  var kind = titleMatchKind(a, b);
+  if(!kind) return false;
+  if(kind === 'exact') return yearsMatch(ya, yb);
+  return !!ya && !!yb && Math.abs(Number(ya) - Number(yb)) <= 1;
 }
 function baseEpisodeTitle(raw){
   // Strips revisit-episode wrapping so "Heat (\"The Re-Heat\")" / "The Re-Departed" resolve
@@ -987,7 +1005,7 @@ function rwFindAll(title, year){
   // ("Re-"/"Three-" episodes) after — matched via baseEpisodeTitle so revisit rows aren't dead data.
   var out = [], i;
   for(i=0;i<RW.length;i++){
-    if(titleMatch(baseEpisodeTitle(RW[i].title), title) && yearsMatch(RW[i].year, year)) out.push(RW[i]);
+    if(titleYearMatch(baseEpisodeTitle(RW[i].title), RW[i].year, title, year)) out.push(RW[i]);
   }
   out.sort(function(a,b){
     var an = parseInt(a.epNo,10), bn = parseInt(b.epNo,10);
@@ -1001,11 +1019,11 @@ function rwFind(title, year){
   return all.length ? all[0] : null;
 }
 function myFind(title, year){
-  for(var i=0;i<MY.length;i++){ if(titleMatch(MY[i].title, title) && yearsMatch(MY[i].year, year)) return MY[i]; }
+  for(var i=0;i<MY.length;i++){ if(titleYearMatch(MY[i].title, MY[i].year, title, year)) return MY[i]; }
   return null;
 }
 function wlFind(title, year){
-  for(var i=0;i<WL.length;i++){ if(titleMatch(WL[i].title, title) && yearsMatch(WL[i].year, year)) return WL[i]; }
+  for(var i=0;i<WL.length;i++){ if(titleYearMatch(WL[i].title, WL[i].year, title, year)) return WL[i]; }
   return null;
 }
 
@@ -1851,16 +1869,21 @@ function fillRWCounts(){
   var targets = RW_COUNT_TARGETS.slice();
   RW_COUNT_TARGETS = [];
   if(!targets.length) return;
-  var seen = {};
-  targets = targets.filter(function(t){
+  // The same person can hold TWO badges on one card -- Sylvester Stallone is both a writer chip
+  // and a cast card on Rocky. De-duplicating by person id (as this did) fetched the count once and
+  // wrote it to only ONE of them, so his cast badge stayed blank while the writer badge read 11.
+  // Group by person instead: fetch once, then write to every element that person owns.
+  var byPerson = {}, order = [];
+  targets.forEach(function(t){
     var k = String(t.id);
-    if(seen[k]) return false;
-    seen[k] = 1; return true;
+    if(!byPerson[k]){ byPerson[k] = { id:t.id, name:t.name, els:[] }; order.push(k); }
+    if(byPerson[k].els.indexOf(t.el) < 0) byPerson[k].els.push(t.el);
   });
-  mapLimit(targets, 4, function(t){
+  var people = order.map(function(k){ return byPerson[k]; });
+  mapLimit(people, 4, function(t){
     return getOnShowCount(t.name, t.id).then(function(n){
-      var box = el(t.el);
-      if(box && n > 1) box.textContent = n;
+      if(!(n > 1)) return;
+      t.els.forEach(function(id){ var box = el(id); if(box) box.textContent = n; });
     }).catch(function(){ /* a missing count is not worth surfacing */ });
   });
 }
