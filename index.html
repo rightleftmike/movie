@@ -1883,10 +1883,23 @@ function movieCardHTML(m){
   var allCast = ((m.credits && m.credits.cast) || []);
   var cast = allCast.slice(0, 12);
   if(allCast.length > 12){
-    var extras = allCast.slice(12).filter(function(c){
-      return c.profile_path && (c.character || '').trim() &&
-             !/^(uncredited|self)$/i.test((c.character || '').trim());
-    }).slice(0, 6);
+    // Taking the first few qualifying names after the cut wasn't enough: Michael Keaton is billed
+    // 38th of 49 on Out of Sight (uncredited, reprising Ray Nicolette from Jackie Brown), so he sat
+    // far beyond any positional window. TMDB's per-person popularity is the honest signal for
+    // "someone you'd actually recognise", so the tail is ranked by it rather than by billing order.
+    //
+    // The >= 3 floor is what stops this becoming noise. Measured against four films: it surfaces
+    // Samuel L. Jackson and Keaton on Out of Sight, Topher Grace / Viola Davis / Joshua Jackson /
+    // Angie Dickinson on Ocean's Eleven, Natalie Portman and William Fichtner on Heat -- and adds
+    // nobody at all to The Departed, whose deepest cast genuinely has no famous cameos.
+    var extras = allCast.slice(12)
+      .filter(function(c){
+        return c.profile_path && (c.character || '').trim() &&
+               !/^(uncredited|self)$/i.test((c.character || '').trim()) &&
+               (c.popularity || 0) >= 3;
+      })
+      .sort(function(a, b){ return (b.popularity || 0) - (a.popularity || 0); })
+      .slice(0, 6);
     cast = cast.concat(extras);
   }
   var studio = (m.production_companies||[]).slice(0,2).map(function(c){ return c.name; }).join(', ');
