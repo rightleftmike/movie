@@ -263,6 +263,12 @@ label{font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:.0
 /* Deliberately understated: present on every screen, but it should read as a footnote, not a
    banner. Same size and colour as the surrounding disclaimer -- only the underline marks it. */
 .ep-tag{display:inline-block;margin-left:6px;font-size:10px;letter-spacing:.05em;text-transform:uppercase;color:var(--dim);border:1px solid var(--line);border-radius:6px;padding:1px 6px;vertical-align:middle}
+.hdr-back{display:none;align-items:center;justify-content:center;flex:none;width:34px;height:34px;
+  margin-right:10px;background:none;border:1px solid var(--line);border-radius:9px;color:var(--txt);
+  font-size:18px;line-height:1;cursor:pointer;padding:0;transition:border-color .16s,color .16s}
+.hdr-back:hover{border-color:var(--gold-dim);color:var(--gold)}
+/* Two gates: only in standalone, and only when there is somewhere to go back to. */
+body.standalone .hdr-back.on{display:inline-flex}
 .sset{border:1px solid var(--line);border-radius:12px;background:var(--panel);margin-top:9px;overflow:hidden}
 .sset>summary{list-style:none;cursor:pointer;padding:13px 15px;display:flex;align-items:center;gap:10px}
 .sset>summary::-webkit-details-marker{display:none}
@@ -422,6 +428,10 @@ body.preauth header, body.preauth #appWrap{display:none!important}
 <body class="preauth">
 <header><div class="wrap">
   <div class="hrow">
+    <!-- Standalone (home-screen) only: there is no browser chrome there, so nothing exposes the
+         history that tab switches and movie cards already push. Hidden outright on the web, where
+         the browser's own Back button does this job and a second one would be clutter. -->
+    <button class="hdr-back" id="hdrBack" data-action="navback" aria-label="Back" title="Back">←</button>
     <div class="logo">Rewatch Club <small id="subTitle">Screening Room</small></div>
     <div class="searchrow hdr-search">
       <input type="text" id="q" placeholder="Search films, actors, directors…" autocomplete="off">
@@ -655,7 +665,7 @@ body.preauth header, body.preauth #appWrap{display:none!important}
     <!-- Two lines, not one run-on: the first is the pitch, the second is what signing in buys you.
          Reading them as a single sentence made the hook and the mechanics compete. -->
     <div class="sub-hook">A club for people who watch things twice.</div>
-    <div class="sub">Free, no ads. Sign in to keep your ratings and notes.</div>
+    <div class="sub">Free — no ads, no subscriptions. Sign in to keep your ratings and notes.</div>
     <label>Email</label>
     <input type="text" id="authEmail" placeholder="you@example.com" autocomplete="email" inputmode="email">
     <button class="btn btn-gold" data-action="magiclink">✉️ Send me a magic link</button>
@@ -785,25 +795,58 @@ function refreshPersonDrawer(){
 var CURRENT_TAB = 'show'; // matches the panel with class "on" in the initial HTML
 var NAV_REPLAY = false;
 var NAV_INITED = false;
+// How deep we are in our own history. Stamped into each state so that going back restores the
+// right depth rather than counting pushes -- A->B->C then back to B has to read 1, not 3.
+var NAV_DEPTH = 0;
+var IS_STANDALONE = (function(){
+  try{
+    return (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
+        || window.navigator.standalone === true;
+  }catch(_){ return false; }
+})();
+function renderBackBtn(){
+  var b = el('hdrBack');
+  if(b) b.classList.toggle('on', NAV_DEPTH > 0);
+}
 function navPushTab(tab){
   if(NAV_REPLAY) return;
-  history.pushState({ view:'tab', tab: tab }, '', '#' + tab);
+  history.pushState({ view:'tab', tab: tab, d: ++NAV_DEPTH }, '', '#' + tab);
+  renderBackBtn();
 }
 function navPushMovie(id, title, year){
   if(NAV_REPLAY) return;
-  history.pushState({ view:'movie', id: id || null, title: title || null, year: year || null }, '', '#movie');
+  history.pushState({ view:'movie', id: id || null, title: title || null, year: year || null, d: ++NAV_DEPTH }, '', '#movie');
+  renderBackBtn();
+}
+// Overlays (drawer, rating form, lightbox, player, voice) are not history entries, so plain
+// history.back() behind an open one would change the page underneath and leave the overlay
+// floating over the wrong screen. Close the topmost thing first; only step back once nothing
+// is covering the page.
+function navBack(){
+  if(el('lbVeil') && el('lbVeil').classList.contains('open')){ closeLightbox(); return; }
+  if(el('gwVeil') && el('gwVeil').classList.contains('open')){ closeGuestWall(); return; }
+  if(el('voiceVeil') && el('voiceVeil').classList.contains('open')){ attemptCloseVoice(); return; }
+  if(el('ageVeil') && el('ageVeil').classList.contains('open')){ closeAgeInfo(); return; }
+  if(el('modalVeil') && el('modalVeil').classList.contains('open')){ attemptCloseModal(); return; }
+  if(el('drawer') && el('drawer').classList.contains('open')){ closeDrawer(); return; }
+  if(NAV_DEPTH > 0) history.back();
 }
 function initNav(){
   if(NAV_INITED) return;
   NAV_INITED = true;
-  history.replaceState({ view:'tab', tab: CURRENT_TAB }, '', '#' + CURRENT_TAB);
+  if(IS_STANDALONE) document.body.classList.add('standalone');
+  NAV_DEPTH = 0;
+  history.replaceState({ view:'tab', tab: CURRENT_TAB, d: 0 }, '', '#' + CURRENT_TAB);
+  renderBackBtn();
   window.addEventListener('popstate', function(ev){
     var st = ev.state;
+    NAV_DEPTH = (st && typeof st.d === 'number') ? st.d : 0;
     NAV_REPLAY = true;
     try{
       if(!st || st.view==='tab') showTab(st && st.tab ? st.tab : 'ratings');
       else if(st.view==='movie'){ if(st.id) openMovieCard(st.id, true); else openMovieByTitle(st.title, st.year); }
     } finally { NAV_REPLAY = false; }
+    renderBackBtn();
   });
 }
 
@@ -4140,6 +4183,7 @@ document.addEventListener('click', function(ev){
   else if(action==='giftpopcorn') openGift(STRIPE_GIFT_POPCORN, 'popcorn');
   else if(action==='giftticket') openGift(STRIPE_GIFT_TICKET, 'ticket');
   else if(action==='giftscreening') openGift(STRIPE_GIFT_SCREENING, 'screening');
+  else if(action==='navback'){ ev.preventDefault(); navBack(); }
   else if(action==='lbapply') lbApply();
   else if(action==='lbcancel'){ LB=null; el('lbOut').innerHTML=''; el('lbFiles').value=''; }
   else if(action==='guest'){ ev.preventDefault(); enterGuest(); }
