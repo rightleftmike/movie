@@ -259,6 +259,19 @@ label{font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:.0
 /* Deliberately understated: present on every screen, but it should read as a footnote, not a
    banner. Same size and colour as the surrounding disclaimer -- only the underline marks it. */
 .ep-tag{display:inline-block;margin-left:6px;font-size:10px;letter-spacing:.05em;text-transform:uppercase;color:var(--dim);border:1px solid var(--line);border-radius:6px;padding:1px 6px;vertical-align:middle}
+.sset{border:1px solid var(--line);border-radius:12px;background:var(--panel);margin-top:9px;overflow:hidden}
+.sset>summary{list-style:none;cursor:pointer;padding:13px 15px;display:flex;align-items:center;gap:10px}
+.sset>summary::-webkit-details-marker{display:none}
+.sset>summary::after{content:'';width:7px;height:7px;border-right:1.5px solid var(--dim);border-bottom:1.5px solid var(--dim);transform:rotate(45deg);flex:none;margin-top:-3px;transition:transform .18s ease}
+.sset[open]>summary::after{transform:rotate(-135deg);margin-top:3px}
+.sset[open]>summary{border-bottom:1px solid var(--line)}
+.sset:hover{border-color:var(--gold-dim)}
+.sset-t{font-family:'Bebas Neue',sans-serif;font-size:17px;letter-spacing:.04em;color:var(--gold);line-height:1}
+.sset-h{font-size:11.5px;color:var(--dim);margin-left:auto;text-align:right}
+.sset-c{padding:13px 15px 15px}
+.sset-danger{border-color:#3d1f1c}
+.sset-danger .sset-t{color:var(--red)}
+.sset-danger:hover{border-color:var(--red)}
 .lb-steps{margin:10px 0 0 0;padding-left:20px;font-size:13px;color:var(--dim);line-height:1.7}
 .lb-steps code{background:var(--panel2);border-radius:4px;padding:1px 5px;font-size:12px;color:var(--txt)}
 .lb-file{margin-top:12px;font-size:13px;color:var(--dim)}
@@ -337,8 +350,6 @@ body.preauth header, body.preauth #appWrap{display:none!important}
    is what keeps "companion built by a fan" from being mistaken for "official app". */
 .app-foot{color:var(--dim);font-size:10.5px;line-height:1.6;margin:34px auto 8px;max-width:620px;text-align:center;border-top:1px solid var(--line);padding-top:14px}
 .app-foot b{color:var(--dim);font-weight:600}
-.danger-zone{border:1px solid var(--red);border-radius:10px;padding:12px 14px;margin-top:12px}
-.danger-zone h4{margin:0 0 4px;color:var(--red);font-size:13px;letter-spacing:.03em;text-transform:uppercase}
 .btn-danger{background:transparent;border:1px solid var(--red);color:var(--red)}
 .btn-danger:hover{background:var(--red);color:#fff}
 .fb-box{width:100%;min-height:88px;resize:vertical}
@@ -493,10 +504,12 @@ body.preauth header, body.preauth #appWrap{display:none!important}
     <div style="display:flex;gap:8px"><input type="text" id="setName" placeholder="Your name"><button class="btn btn-outline" data-action="savename">Save</button></div>
     <button class="btn btn-outline btn-sm" data-action="signout" style="margin-top:10px">Sign out</button>
 
-    <hr class="gold">
-    <h3>Add to your home screen</h3>
-    <div class="settings-note">Rewatch Club runs in the browser — there's nothing to download and no app store. Adding it to your home screen gives it its own icon and opens it full screen, without the browser bars.</div>
-    <div class="install-steps" id="installSteps"></div>
+    <!-- Settings is now ordered by how often a thing is *looked at*, not by when it was built.
+         Anything that reports state (who am I, how many credits) or that we actively want used
+         (feedback) stays open. Anything you do once per device or once ever -- install, import,
+         export, delete -- is folded into a <details> so the page is short enough to scan on a
+         phone. Native <details> rather than JS: keyboard- and screen-reader-accessible for free,
+         and it survives having no JavaScript at all. -->
 
     <hr class="gold">
     <label>AI credits</label>
@@ -504,17 +517,11 @@ body.preauth header, body.preauth #appWrap{display:none!important}
     <div id="creditNote" style="margin-top:8px;display:none">
       <div class="supporter-note">Credits are spent by <b>Suggest, Watch Tonight, note polishing and film stills</b>. Everyone gets <b>50 a week</b> — no card, no tiers, no account to upgrade. There's also a shared daily pool across all users, so on a busy day the AI can run dry before your own credits do. Rating films, notes, watchlist, follows and the episode list never touch credits and never run out.</div>
     </div>
-    <!-- Supabase connection status, episode-list-source status + TMDB title audit tool, and
-         podcast-link click stats used to render here -- all internal/debugging info with no
-         action a regular user needs to take, removed from the user-facing Settings screen
-         (2026-07-29). The underlying data (sbStatus/sheetStatus elements, auditRW(),
-         loadClickStats()) still exists in the JS below, now guarded with el(id) null-checks
-         since these DOM nodes no longer exist -- easy to re-surface later (e.g. behind a
-         hidden admin view) without rebuilding any of that logic. -->
 
     <!-- Deliberately placed immediately after the credit balance: this section is the answer to
          the question the balance just raised ("why is there a limit?"). The tip jar therefore
-         arrives as a footnote to an explanation the reader wanted, not as a standalone ask. -->
+         arrives as a footnote to an explanation the reader wanted, not as a standalone ask.
+         This adjacency was a considered decision -- don't separate them. -->
     <hr class="gold">
     <h3>How this is paid for</h3>
     <div class="settings-note">Rewatch Club is free, and those AI features run on a <b>fixed pot</b>. When it runs out — probably within the next few months — <b>they'll switch off</b>. Everything else, your ratings, notes, watchlist, follows and the episode list, keeps working regardless and stays free.<br><br>If you'd like to contribute to the pot that powers this app — the AI, the hosting, the database — or you just dig it and want to pay it forward, here's the tip jar:</div>
@@ -533,7 +540,9 @@ body.preauth header, body.preauth #appWrap{display:none!important}
     <div class="settings-note" style="margin-top:8px">One-time, no subscription, nothing recurring. These unlock no extra credits or features — they just go into the pot that keeps this running.</div>
 
     <!-- Sits after the money ask on purpose, so the screen doesn't end on "give me money": the
-         sequence reads "here's how it's paid for / now tell me what to build". -->
+         sequence reads "here's how it's paid for / now tell me what to build". Stays expanded
+         because it is one of the few real signals at this size -- burying the feedback box one
+         click deep is a good way to stop receiving feedback. -->
     <hr class="gold">
     <h3>Requests &amp; feedback</h3>
     <div class="settings-note">Genuinely want to hear what's missing or annoying. It goes straight to me.</div>
@@ -542,32 +551,50 @@ body.preauth header, body.preauth #appWrap{display:none!important}
     <div id="fbMsgOut" class="settings-note" style="margin-top:6px"></div>
 
     <hr class="gold">
-    <h3>Import from Letterboxd</h3>
-    <div class="settings-note">Already track films on Letterboxd? Bring across everything that overlaps with the show — ratings, how many times you've seen each one, when you first saw it, and anything you wrote.</div>
-    <ol class="lb-steps">
-      <li>On Letterboxd, go to <b>Settings → Data → Export your data</b>. It's free.</li>
-      <li>Unzip the file it downloads.</li>
-      <li>Pick the CSVs below — <code>ratings</code>, <code>diary</code>, <code>reviews</code> and <code>watchlist</code>. You can select all of them at once.</li>
-    </ol>
-    <input type="file" id="lbFiles" accept=".csv,text/csv" multiple class="lb-file">
-    <div class="settings-note" style="margin-top:6px">Your file is read in this browser and never uploaded. Nothing is saved until you've seen exactly what will change and pressed the button.</div>
-    <div id="lbOut" style="margin-top:10px"></div>
 
-    <hr class="gold">
-    <h3>Your data</h3>
-    <div class="settings-note"><b>Your ratings and notes belong to you.</b> Take a full copy whenever you like, and delete everything permanently whenever you like.</div>
-    <button class="btn btn-outline" style="margin-top:10px" data-action="export">⬇ Export everything to JSON</button>
+    <details class="sset">
+      <summary><span class="sset-t">Add to your home screen</span><span class="sset-h">own icon, full screen</span></summary>
+      <div class="sset-c">
+        <div class="settings-note">Rewatch Club runs in the browser — there's nothing to download and no app store. Adding it to your home screen gives it its own icon and opens it full screen, without the browser bars.</div>
+        <div class="install-steps" id="installSteps"></div>
+      </div>
+    </details>
 
-    <!-- Own section at the very bottom rather than nested inside "Your data". Export is safe and
-         delete is not; sharing one heading made the whole section read as risky, and the red box
-         previously sat directly above the tip jar. -->
-    <hr class="gold">
-    <div class="danger-zone">
-      <h4>Delete everything</h4>
-      <div class="settings-note">Permanently removes your ratings, notes, watchlist, follows, taste profile and account. This cannot be undone, and there is no backup we can restore from — export first if you want a copy.</div>
-      <button class="btn btn-danger btn-sm" style="margin-top:10px" data-action="deleteaccount">Delete my account and all my data</button>
-      <div id="deleteBox" style="margin-top:8px"></div>
-    </div>
+    <details class="sset">
+      <summary><span class="sset-t">Import from Letterboxd</span><span class="sset-h">ratings, reviews, watchlist</span></summary>
+      <div class="sset-c">
+        <div class="settings-note">Already track films on Letterboxd? Bring across everything that overlaps with the show — ratings, how many times you've seen each one, when you first saw it, and anything you wrote.</div>
+        <ol class="lb-steps">
+          <li>On Letterboxd, go to <b>Settings → Data → Export your data</b>. It's free.</li>
+          <li>Unzip the file it downloads.</li>
+          <li>Pick the CSVs below — <code>ratings</code>, <code>diary</code>, <code>reviews</code> and <code>watchlist</code>. You can select all of them at once.</li>
+        </ol>
+        <input type="file" id="lbFiles" accept=".csv,text/csv" multiple class="lb-file">
+        <div class="settings-note" style="margin-top:6px">Your file is read in this browser and never uploaded. Nothing is saved until you've seen exactly what will change and pressed the button.</div>
+        <div id="lbOut" style="margin-top:10px"></div>
+      </div>
+    </details>
+
+    <details class="sset">
+      <summary><span class="sset-t">Your data</span><span class="sset-h">export a full copy</span></summary>
+      <div class="sset-c">
+        <div class="settings-note"><b>Your ratings and notes belong to you.</b> Take a full copy whenever you like, and delete everything permanently whenever you like.</div>
+        <button class="btn btn-outline" style="margin-top:10px" data-action="export">⬇ Export everything to JSON</button>
+      </div>
+    </details>
+
+    <!-- Own row at the very bottom rather than nested inside "Your data". Export is safe and
+         delete is not; sharing one heading made the whole section read as risky. Collapsed by
+         default so a permanently-open red box isn't the last thing on the screen, but the row
+         is still plainly labelled -- hiding it entirely would be worse than showing it. -->
+    <details class="sset sset-danger">
+      <summary><span class="sset-t">Delete everything</span><span class="sset-h">permanent</span></summary>
+      <div class="sset-c">
+        <div class="settings-note">Permanently removes your ratings, notes, watchlist, follows, taste profile and account. This cannot be undone, and there is no backup we can restore from — export first if you want a copy.</div>
+        <button class="btn btn-danger btn-sm" style="margin-top:10px" data-action="deleteaccount">Delete my account and all my data</button>
+        <div id="deleteBox" style="margin-top:8px"></div>
+      </div>
+    </details>
   </div>
 
   <div class="app-foot">
