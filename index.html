@@ -339,6 +339,7 @@ body.preauth header, body.preauth #appWrap{display:none!important}
 .auth-gate{position:fixed;inset:0;background:radial-gradient(120% 90% at 50% 0%,#141009,#0b0a08);z-index:200;display:none;flex-direction:column;align-items:center;justify-content:center;padding:24px}
 .auth-card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:26px 22px;width:min(400px,94vw);text-align:center;box-shadow:0 20px 60px #000a}
 .auth-card h1{font-family:'Bebas Neue',sans-serif;font-size:40px;color:var(--gold);line-height:.95;letter-spacing:.03em}
+.auth-card .sub-hook,.auth-card .sub,.auth-hint,.auth-legal,.auth-foot,.peek-btn,.auth-msg{text-wrap:balance}
 .auth-card .sub-hook{color:var(--txt);font-size:14.5px;margin:10px 0 3px}
 .auth-card .sub{color:var(--dim);font-size:13px;margin:0 0 20px}
 .auth-hint{color:var(--dim);font-size:11.5px;line-height:1.5;margin-top:9px}
@@ -649,23 +650,23 @@ body.preauth header, body.preauth #appWrap{display:none!important}
     <!-- Two lines, not one run-on: the first is the pitch, the second is what signing in buys you.
          Reading them as a single sentence made the hook and the mechanics compete. -->
     <div class="sub-hook">A club for people who watch things twice.</div>
-    <div class="sub">Sign in to keep your ratings, watchlist and follows.</div>
+    <div class="sub">Free, no ads. Sign in to keep your ratings and notes.</div>
     <label>Email</label>
     <input type="text" id="authEmail" placeholder="you@example.com" autocomplete="email" inputmode="email">
     <button class="btn btn-gold" data-action="magiclink">✉️ Send me a magic link</button>
     <!-- Sits with the button it explains. It used to be stranded at the bottom of the card, where
          it answered a question ("wait, no password?") several beats after it was asked. -->
-    <div class="auth-hint">We'll email you a one-time sign-in link — no password to remember.</div>
+    <div class="auth-hint">No password — we'll email you a link.</div>
     <div class="auth-sep">or</div>
     <button class="btn gbtn" data-action="google">Continue with Google</button>
     <div class="auth-msg" id="authMsg"></div>
     <!-- Legal line now sits under *both* sign-in options rather than only the email one, which is
          what "by signing in" actually refers to. -->
-    <div class="auth-legal">By signing in you agree to the <a href="terms.html">Terms</a> and <a href="privacy.html">Privacy Policy</a>. Your ratings and notes stay yours — export or delete everything at any time.</div>
+    <div class="auth-legal">By signing in you agree to the <a href="terms.html">Terms</a> and <a href="privacy.html">Privacy Policy</a>.</div>
     <!-- A real third way in, so it's styled as one: a full-width outline action rather than a
          dotted link apologising for itself at the bottom of the card. -->
-    <div class="auth-peek"><a href="#" class="peek-btn" data-action="guest">Look around first — no account needed <span aria-hidden="true">→</span></a></div>
-    <div class="auth-foot">An unofficial companion for <b>The Rewatchables</b>, built by listeners. Not affiliated with The Ringer or Spotify.</div>
+    <div class="auth-peek"><a href="#" class="peek-btn" data-action="guest">Browse without an account <span aria-hidden="true">→</span></a></div>
+    <div class="auth-foot">An unofficial companion for <b>The Rewatchables</b>. Not affiliated with The Ringer or Spotify.</div>
   </div>
 </div>
 
