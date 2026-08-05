@@ -293,9 +293,11 @@ label{font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:.0
 .guest-only{display:none}
 body.guest .guest-only{display:inline-flex}
 body.guest .auth-only{display:none!important}
-.auth-peek{margin-top:16px;padding-top:14px;border-top:1px solid var(--line);font-size:12.5px}
-.auth-peek a{color:var(--dim);text-decoration:none;border-bottom:1px dotted var(--gold-dim)}
-.auth-peek a:hover{color:var(--gold)}
+.auth-peek{margin-top:18px;padding-top:16px;border-top:1px solid var(--line)}
+.peek-btn{display:flex;align-items:center;justify-content:center;gap:7px;width:100%;padding:11px 14px;
+  border:1px solid var(--line);border-radius:10px;color:var(--dim);text-decoration:none;
+  font-size:13px;transition:border-color .16s ease,color .16s ease}
+.peek-btn:hover{border-color:var(--gold-dim);color:var(--gold)}
 .guest-note{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:13px;color:var(--dim)}
 .guest-note b{color:var(--gold)}
 .upcoming-tag{display:inline-block;margin-left:6px;font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--gold);border:1px solid var(--gold-dim);border-radius:6px;padding:1px 6px;vertical-align:middle}
@@ -337,7 +339,10 @@ body.preauth header, body.preauth #appWrap{display:none!important}
 .auth-gate{position:fixed;inset:0;background:radial-gradient(120% 90% at 50% 0%,#141009,#0b0a08);z-index:200;display:none;flex-direction:column;align-items:center;justify-content:center;padding:24px}
 .auth-card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:26px 22px;width:min(400px,94vw);text-align:center;box-shadow:0 20px 60px #000a}
 .auth-card h1{font-family:'Bebas Neue',sans-serif;font-size:40px;color:var(--gold);line-height:.95;letter-spacing:.03em}
-.auth-card .sub{color:var(--dim);font-size:13px;margin:6px 0 20px}
+.auth-card .sub-hook{color:var(--txt);font-size:14.5px;margin:10px 0 3px}
+.auth-card .sub{color:var(--dim);font-size:13px;margin:0 0 20px}
+.auth-hint{color:var(--dim);font-size:11.5px;line-height:1.5;margin-top:9px}
+.auth-legal{color:var(--dim);font-size:11.5px;line-height:1.6;margin-top:16px}
 .auth-card label{text-align:left}
 .auth-card .btn{width:100%;margin-top:10px;justify-content:center;display:flex;align-items:center;gap:9px}
 .gbtn{background:#fff;color:#1f1f1f;border:1px solid #fff;font-weight:700}
@@ -641,15 +646,26 @@ body.preauth header, body.preauth #appWrap{display:none!important}
 <div class="auth-gate" id="authGate">
   <div class="auth-card">
     <h1>Rewatch Club</h1>
-    <div class="sub">A club for people who watch things twice. Sign in to keep your ratings, watchlist and follows.</div>
+    <!-- Two lines, not one run-on: the first is the pitch, the second is what signing in buys you.
+         Reading them as a single sentence made the hook and the mechanics compete. -->
+    <div class="sub-hook">A club for people who watch things twice.</div>
+    <div class="sub">Sign in to keep your ratings, watchlist and follows.</div>
     <label>Email</label>
     <input type="text" id="authEmail" placeholder="you@example.com" autocomplete="email" inputmode="email">
-    <button class="btn btn-gold" data-action="magiclink">✉️ Send me a magic link</button><div style="margin-top:14px;font-size:11.5px;color:var(--dim);line-height:1.6">By signing in you agree to the <a href="terms.html">Terms</a> and <a href="privacy.html">Privacy Policy</a>. Your ratings and notes stay yours — export or delete everything at any time.</div>
+    <button class="btn btn-gold" data-action="magiclink">✉️ Send me a magic link</button>
+    <!-- Sits with the button it explains. It used to be stranded at the bottom of the card, where
+         it answered a question ("wait, no password?") several beats after it was asked. -->
+    <div class="auth-hint">We'll email you a one-time sign-in link — no password to remember.</div>
     <div class="auth-sep">or</div>
     <button class="btn gbtn" data-action="google">Continue with Google</button>
     <div class="auth-msg" id="authMsg"></div>
-    <div class="auth-peek"><a href="#" data-action="guest">Just looking? Browse the episode list without an account →</a></div>
-    <div class="auth-foot">We'll email you a one-time sign-in link — no password to remember.<br><br>An unofficial companion for <b>The Rewatchables</b>, built by listeners. Not affiliated with The Ringer or Spotify.</div>
+    <!-- Legal line now sits under *both* sign-in options rather than only the email one, which is
+         what "by signing in" actually refers to. -->
+    <div class="auth-legal">By signing in you agree to the <a href="terms.html">Terms</a> and <a href="privacy.html">Privacy Policy</a>. Your ratings and notes stay yours — export or delete everything at any time.</div>
+    <!-- A real third way in, so it's styled as one: a full-width outline action rather than a
+         dotted link apologising for itself at the bottom of the card. -->
+    <div class="auth-peek"><a href="#" class="peek-btn" data-action="guest">Look around first — no account needed <span aria-hidden="true">→</span></a></div>
+    <div class="auth-foot">An unofficial companion for <b>The Rewatchables</b>, built by listeners. Not affiliated with The Ringer or Spotify.</div>
   </div>
 </div>
 
