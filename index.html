@@ -518,26 +518,21 @@ body.preauth header, body.preauth #appWrap{display:none!important}
       <div class="supporter-note">Credits are spent by <b>Suggest, Watch Tonight, note polishing and film stills</b>. Everyone gets <b>50 a week</b> — no card, no tiers, no account to upgrade. There's also a shared daily pool across all users, so on a busy day the AI can run dry before your own credits do. Rating films, notes, watchlist, follows and the episode list never touch credits and never run out.</div>
     </div>
 
-    <!-- Deliberately placed immediately after the credit balance: this section is the answer to
-         the question the balance just raised ("why is there a limit?"). The tip jar therefore
-         arrives as a footnote to an explanation the reader wanted, not as a standalone ask.
-         This adjacency was a considered decision -- don't separate them. -->
+    <!-- Placed immediately after the credit balance: this section answers the question the
+         balance just raised ("why is there a limit?"). Keep them adjacent.
+
+         >>> TIP JAR REMOVED FOR LAUNCH -- REINSTATE 6 OCTOBER 2026. <<<
+         The gift buttons that used to sit here were pulled deliberately, not lost. Launching with
+         nothing to buy means there is nothing to be cynical about at exactly the moment strangers
+         are deciding whether this is a fan project or a business. The *honesty* about funding is
+         what earns trust, so all of that copy stays -- only the ask went.
+         The ask returns on 6 Oct (two weeks before the credit expires on the 20th) as a dated,
+         specific request rather than a permanent fixture. Everything needed is still in place:
+         openGift(), the three STRIPE_GIFT_* links, the dispatcher branches and the .gift-btn CSS.
+         Re-adding is a markup change only. -->
     <hr class="gold">
     <h3>How this is paid for</h3>
-    <div class="settings-note">Rewatch Club is free, and those AI features run on a <b>fixed pot</b>. When it runs out — probably within the next few months — <b>they'll switch off</b>. Everything else, your ratings, notes, watchlist, follows and the episode list, keeps working regardless and stays free.<br><br>If you'd like to contribute to the pot that powers this app — the AI, the hosting, the database — or you just dig it and want to pay it forward, here's the tip jar:</div>
-
-    <div class="gift-row">
-      <button class="gift-btn" data-action="giftpopcorn">
-        <span class="gift-emoji">🍿</span><span class="gift-name">Buy us a popcorn</span><span class="gift-amt">$8</span>
-      </button>
-      <button class="gift-btn" data-action="giftticket">
-        <span class="gift-emoji">🎟️</span><span class="gift-name">Buy us a ticket</span><span class="gift-amt">$16</span>
-      </button>
-      <button class="gift-btn" data-action="giftscreening">
-        <span class="gift-emoji">🎬</span><span class="gift-name">The screening package</span><span class="gift-amt">you pick</span>
-      </button>
-    </div>
-    <div class="settings-note" style="margin-top:8px">One-time, no subscription, nothing recurring. These unlock no extra credits or features — they just go into the pot that keeps this running.</div>
+    <div class="settings-note">Rewatch Club is free — no ads, no memberships, nothing to buy. The AI features run on a <b>fixed pot of credit that expires on 20 October 2026</b>, and when it's gone <b>they'll switch off</b> unless I find a way to keep paying for them. I'd rather say that now than surprise you later.<br><br>Everything else — your ratings, notes, watchlist, follows and the episode list — keeps working regardless and stays free.</div>
 
     <!-- Sits after the money ask on purpose, so the screen doesn't end on "give me money": the
          sequence reads "here's how it's paid for / now tell me what to build". Stays expanded
@@ -602,7 +597,6 @@ body.preauth header, body.preauth #appWrap{display:none!important}
     <b>The Rewatchables</b>. Not affiliated with, endorsed by, or sponsored by The Ringer or Spotify.
     Film data from TMDB.
     <br><a class="foot-link" href="privacy.html">Privacy</a> · <a class="foot-link" href="terms.html">Terms</a>
-    · <span class="foot-link" data-action="gotosupport">Chip in toward keeping this running</span>
   </div>
 </div>
 
@@ -959,9 +953,7 @@ function aiErrorHTML(e){
       + '<div class="paywall-icon">\u23f3</div>'
       + '<div class="paywall-head">Today\u2019s shared credits are used up</div>'
       + '<div class="paywall-sub">Everyone draws AI credits from one shared daily pool, and it\u2019s empty for today. It refills tomorrow \u2014 nothing is wrong with your account, and there\u2019s nothing to buy.</div>'
-      + '<div class="paywall-sub" style="margin-top:10px">This is what the running costs look like from the inside. If you\u2019d like to contribute to the pot that powers this app \u2014 the AI, the hosting, the database \u2014 or you just dig it and want to pay it forward, here\u2019s the tip jar. It unlocks nothing.</div>'
-      + '<button class="btn btn-outline btn-sm" style="margin-top:12px" data-action="giftpopcorn">\ud83c\udf7f Buy us a popcorn \u2014 $8</button>'
-      + '<div style="margin-top:8px"><span class="foot-link" style="font-size:12px" data-action="gotosupport">other ways to chip in</span></div>'
+      + '<div class="paywall-sub" style="margin-top:10px">This is what the running costs look like from the inside \u2014 the pot paying for it expires in October, and there is nothing to buy in the meantime.</div>'
       + '</div></div>';
   }
   if(e.upgradeRequired){
@@ -973,9 +965,7 @@ function aiErrorHTML(e){
       + '<div class="paywall-icon">✨</div>'
       + '<div class="paywall-head">That\u2019s your 50 AI credits for the week</div>'
       + '<div class="paywall-sub">They reset ' + esc(creditResetLabel()) + '. Everything that doesn\u2019t need AI \u2014 rating films, notes, watchlist, follows, the episode list \u2014 keeps working as normal.</div>'
-      + '<div class="paywall-sub" style="margin-top:10px">There\u2019s no paid tier and nothing to upgrade to. If you\u2019d like to contribute to the pot that powers this app \u2014 the AI, the hosting, the database \u2014 or you just dig it and want to pay it forward, here\u2019s the tip jar.</div>'
-      + '<button class="btn btn-outline btn-sm" style="margin-top:12px" data-action="giftpopcorn">\ud83c\udf7f Buy us a popcorn \u2014 $8</button>'
-      + '<div style="margin-top:8px"><span class="foot-link" style="font-size:12px" data-action="gotosupport">other ways to chip in</span></div>'
+      + '<div class="paywall-sub" style="margin-top:10px">There\u2019s no paid tier, nothing to upgrade to and nothing to buy. Come back when they reset.</div>'
       + '</div></div>';
   }
   return '<p style="color:var(--red);margin-top:10px">⚠️ ' + esc(e.message) + '</p>';
