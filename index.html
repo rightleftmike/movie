@@ -259,6 +259,20 @@ label{font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:.0
 /* Deliberately understated: present on every screen, but it should read as a footnote, not a
    banner. Same size and colour as the surrounding disclaimer -- only the underline marks it. */
 .ep-tag{display:inline-block;margin-left:6px;font-size:10px;letter-spacing:.05em;text-transform:uppercase;color:var(--dim);border:1px solid var(--line);border-radius:6px;padding:1px 6px;vertical-align:middle}
+.lb-steps{margin:10px 0 0 0;padding-left:20px;font-size:13px;color:var(--dim);line-height:1.7}
+.lb-steps code{background:var(--panel2);border-radius:4px;padding:1px 5px;font-size:12px;color:var(--txt)}
+.lb-file{margin-top:12px;font-size:13px;color:var(--dim)}
+.lb-file::file-selector-button{background:var(--panel2);color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:7px 12px;margin-right:10px;cursor:pointer;font-family:inherit;font-size:13px}
+.lb-file::file-selector-button:hover{border-color:var(--gold-dim)}
+.lb-sum{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;font-size:13px;line-height:1.65}
+.lb-sum b{color:var(--gold)}
+.lb-tbl{width:100%;border-collapse:collapse;margin-top:10px;font-size:12.5px}
+.lb-tbl th{text-align:left;color:var(--dim);font-weight:500;border-bottom:1px solid var(--line);padding:5px 6px}
+.lb-tbl td{padding:5px 6px;border-bottom:1px solid var(--line);vertical-align:top}
+.lb-tbl tr:last-child td{border-bottom:0}
+.lb-scroll{max-height:300px;overflow-y:auto;margin-top:6px;border:1px solid var(--line);border-radius:10px}
+.lb-skip{color:var(--dim)}
+.lb-note{color:var(--dim);font-size:11.5px;display:block;margin-top:2px}
 .gw-icon{font-size:26px}
 .gw-head{font-family:'Bebas Neue',sans-serif;font-size:21px;color:var(--gold);letter-spacing:.03em;margin-top:4px}
 .gw-sub{font-size:13px;color:var(--dim);line-height:1.55;margin:8px auto 0;max-width:310px}
@@ -526,6 +540,18 @@ body.preauth header, body.preauth #appWrap{display:none!important}
     <textarea id="fbMsg" class="fb-box" style="margin-top:10px" placeholder="What would make this better?"></textarea>
     <button class="btn btn-outline btn-sm" style="margin-top:8px" data-action="sendfeedback">Send it</button>
     <div id="fbMsgOut" class="settings-note" style="margin-top:6px"></div>
+
+    <hr class="gold">
+    <h3>Import from Letterboxd</h3>
+    <div class="settings-note">Already track films on Letterboxd? Bring across everything that overlaps with the show — ratings, how many times you've seen each one, when you first saw it, and anything you wrote.</div>
+    <ol class="lb-steps">
+      <li>On Letterboxd, go to <b>Settings → Data → Export your data</b>. It's free.</li>
+      <li>Unzip the file it downloads.</li>
+      <li>Pick the CSVs below — <code>ratings</code>, <code>diary</code>, <code>reviews</code> and <code>watchlist</code>. You can select all of them at once.</li>
+    </ol>
+    <input type="file" id="lbFiles" accept=".csv,text/csv" multiple class="lb-file">
+    <div class="settings-note" style="margin-top:6px">Your file is read in this browser and never uploaded. Nothing is saved until you've seen exactly what will change and pressed the button.</div>
+    <div id="lbOut" style="margin-top:10px"></div>
 
     <hr class="gold">
     <h3>Your data</h3>
@@ -3730,6 +3756,256 @@ function exportRatings(){
   toast('Backup downloaded', 'ok');
 }
 
+
+/* ================= LETTERBOXD IMPORT =================
+   Runs entirely in the browser: the CSVs are read with FileReader, matched against the episode
+   list in memory, and nothing is written until the user presses the confirm button. The file is
+   never uploaded anywhere -- there is no server endpoint for this feature at all, which is both
+   the simplest implementation and the honest privacy story.
+
+   Letterboxd's export is a zip of several CSVs that each describe a different slice of the same
+   history, so we merge them per film rather than treating any one file as authoritative:
+     ratings.csv    Date,Name,Year,Letterboxd URI,Rating
+     diary.csv      + Rewatch, Watched Date          -> times seen, first seen year
+     reviews.csv    + Review, Tags                   -> what stuck with me
+     watchlist.csv  Date,Name,Year,Letterboxd URI    -> watchlist
+   watched.csv and watchlist.csv share identical headers, so files are identified by name first. */
+
+var LB = null; // parsed + matched result, held between preview and apply
+
+// Letterboxd rates 0.5-5 in half steps; this app has five named tiers. Math.round puts every
+// half-step up to the nearer tier (3.5 -> 4 -> Loved), which is the mapping shown in the preview
+// so nobody is surprised by where their half-stars landed.
+var LB_STARS_TO_TIER = { 5:'All-timer', 4:'Loved', 3:'Liked', 2:'Meh', 1:'Disliked' };
+function lbTier(raw){
+  var n = parseFloat(raw);
+  if(!isFinite(n) || n <= 0) return null;
+  return LB_STARS_TO_TIER[Math.min(5, Math.max(1, Math.round(n)))] || null;
+}
+
+function lbRows(text){
+  // Letterboxd's CSV spec escapes an embedded quote as \" whereas RFC 4180 (which parseCSV
+  // implements, because that's what the episode sheet uses) expects "". Left alone, a review
+  // containing a quotation mark terminates its field early and the text comes out shredded.
+  // Normalising the escaping here means parseCSV stays untouched and keeps serving the sheet.
+  var rows = parseCSV(String(text||'').replace(/\\"/g, '""'));
+  if(!rows.length) return [];
+  var head = rows[0].map(function(h){ return String(h||'').trim().toLowerCase(); });
+  var out = [];
+  for(var i=1;i<rows.length;i++){
+    if(!rows[i].length || (rows[i].length===1 && !rows[i][0])) continue;
+    var o = {};
+    for(var j=0;j<head.length;j++) o[head[j]] = (rows[i][j]||'').trim();
+    if(o.name) out.push(o);
+  }
+  return out;
+}
+
+function lbKind(filename, rows){
+  var f = String(filename||'').toLowerCase();
+  if(f.indexOf('watchlist') >= 0) return 'watchlist';
+  if(f.indexOf('review')    >= 0) return 'reviews';
+  if(f.indexOf('diary')     >= 0) return 'diary';
+  if(f.indexOf('rating')    >= 0) return 'ratings';
+  if(f.indexOf('watched')   >= 0) return 'watched';
+  // Fall back to shape if the file has been renamed. watched/watchlist are indistinguishable by
+  // header alone, so an unnamed 4-column file is treated as watched (the safer of the two).
+  var k = rows.length ? Object.keys(rows[0]) : [];
+  if(k.indexOf('review') >= 0) return 'reviews';
+  if(k.indexOf('watched date') >= 0) return 'diary';
+  if(k.indexOf('rating') >= 0) return 'ratings';
+  return 'watched';
+}
+
+function lbUnescape(v){ return String(v||'').replace(/\\"/g, '"').replace(/\\\\/g, '\\'); }
+function lbYear(v){ var m = String(v||'').match(/^(\d{4})/); return m ? Number(m[1]) : null; }
+
+function lbHandleFiles(files){
+  var box = el('lbOut');
+  if(!files || !files.length){ box.innerHTML=''; LB=null; return; }
+  if(!RW.length){ box.innerHTML = '<div class="lb-sum">The episode list is still loading — give it a second and pick the files again.</div>'; return; }
+  box.innerHTML = '<div class="lb-sum"><span class="spin"></span> Reading…</div>';
+
+  var pending = files.length, seen = {}, order = [], wl = {}, kinds = {};
+
+  function slot(name, year){
+    var key = norm(stripLeadingArticle(name)) + '|' + (year||'');
+    if(!seen[key]){ seen[key] = { name:name, year:year, diary:0, dates:[], rewatched:false }; order.push(key); }
+    return seen[key];
+  }
+
+  function done(){
+    if(--pending > 0) return;
+    lbMatch(order.map(function(k){ return seen[k]; }), wl, kinds);
+  }
+
+  Array.prototype.forEach.call(files, function(file){
+    var fr = new FileReader();
+    fr.onload = function(){
+      try{
+        var rows = lbRows(String(fr.result||''));
+        var kind = lbKind(file.name, rows);
+        kinds[kind] = (kinds[kind]||0) + rows.length;
+        rows.forEach(function(r){
+          var y = lbYear(r.year);
+          if(kind === 'watchlist'){
+            var wk = norm(stripLeadingArticle(r.name)) + '|' + (y||'');
+            wl[wk] = { name:r.name, year:y };
+            return;
+          }
+          var it = slot(r.name, y);
+          if(r.rating) it.rating = r.rating;                       // any file carrying a rating
+          if(kind === 'diary'){
+            it.diary++;
+            if(r['watched date']) it.dates.push(r['watched date']);
+            if(/y|true|1/i.test(r.rewatch||'')) it.rewatched = true;
+          }
+          if(kind === 'reviews'){
+            if(r.review) it.review = lbUnescape(r.review);
+            if(r.tags)   it.tags   = lbUnescape(r.tags);
+            if(r['watched date']) it.dates.push(r['watched date']);
+            if(/y|true|1/i.test(r.rewatch||'')) it.rewatched = true;
+          }
+        });
+      }catch(e){ /* one unreadable file shouldn't sink the rest */ }
+      done();
+    };
+    fr.onerror = done;
+    fr.readAsText(file);
+  });
+}
+
+// Keeps only films the show has actually covered -- someone's whole Letterboxd history might be
+// thousands of titles, and this app has opinions about 486 of them.
+function lbMatch(items, wl, kinds){
+  var plan = [], skipped = 0, offshow = 0, unrated = 0;
+
+  items.forEach(function(it){
+    var ep = rwFind(it.name, it.year);
+    if(!ep){ offshow++; return; }
+    var tier = lbTier(it.rating);
+    var years = it.dates.map(function(d){ return lbYear(d); }).filter(Boolean).sort();
+    var prose = [it.review || '', it.tags ? '[' + it.tags + ']' : ''].filter(Boolean).join(' ');
+    var existing = myFind(ep.title, ep.year);
+    var row = {
+      title: ep.title, year: ep.year, lbName: it.name,
+      tier: tier, raw: it.rating || '',
+      times: it.diary > 1 ? it.diary : null,
+      first: years.length ? years[0] : null,
+      // Only claim "would rewatch" where they demonstrably did. Letterboxd has no equivalent
+      // field, and guessing it from a star rating would put words in their mouth.
+      rewatch: (it.rewatched || it.diary > 1) ? 'Yes' : null,
+      vibe: prose || null,
+      existing: !!existing
+    };
+    // The rating column is NOT NULL with a CHECK constraint listing the five tiers, so there is
+    // no honest way to store a film someone reviewed but never rated -- picking a tier for them
+    // would put an opinion in their mouth. Count these and say so rather than guessing.
+    if(!tier){ if(prose || row.times || row.first) unrated++; return; }
+    if(existing){ skipped++; row.skip = true; }
+    plan.push(row);
+  });
+
+  var wlPlan = [], inThisImport = {};
+  plan.forEach(function(r){ inThisImport[norm(stripLeadingArticle(r.title)) + '|' + (r.year||'')] = 1; });
+  Object.keys(wl).forEach(function(k){
+    var w = wl[k], ep = rwFind(w.name, w.year);
+    if(!ep) return;
+    if(myFind(ep.title, ep.year) || wlFind(ep.title, ep.year)) return;
+    // Don't queue something for "want to watch" that this very import is about to mark as watched.
+    if(inThisImport[norm(stripLeadingArticle(ep.title)) + '|' + (ep.year||'')]) return;
+    wlPlan.push({ title: ep.title, year: ep.year });
+  });
+
+  LB = { plan: plan, wl: wlPlan, offshow: offshow, skipped: skipped, unrated: unrated, kinds: kinds };
+  lbRenderPreview();
+}
+
+function lbRenderPreview(){
+  var box = el('lbOut');
+  var willWrite = LB.plan.filter(function(r){ return !r.skip; });
+  if(!willWrite.length && !LB.wl.length){
+    box.innerHTML = '<div class="lb-sum">Nothing new to bring across. '
+      + (LB.offshow ? '<b>' + LB.offshow + '</b> of your films aren’t episodes of the show, and ' : '')
+      + (LB.skipped ? '<b>' + LB.skipped + '</b> you’ve already rated here.' : 'Nothing matched the episode list.')
+      + '</div>';
+    return;
+  }
+
+  var html = '<div class="lb-sum">Ready to import <b>' + willWrite.length + '</b> rating'
+    + (willWrite.length===1?'':'s')
+    + (LB.wl.length ? ' and <b>' + LB.wl.length + '</b> watchlist film' + (LB.wl.length===1?'':'s') : '')
+    + '.';
+  if(LB.skipped) html += '<br>Leaving <b>' + LB.skipped + '</b> alone because you’ve already rated '
+    + (LB.skipped===1?'it':'them') + ' here — nothing you’ve written will be overwritten.';
+  if(LB.unrated) html += '<br><span class="lb-skip">' + LB.unrated + ' film'
+    + (LB.unrated===1?'':'s') + ' left out — you logged ' + (LB.unrated===1?'it':'them')
+    + ' on Letterboxd without a star rating, and a rating is required here.</span>';
+  if(LB.offshow) html += '<br><span class="lb-skip">' + LB.offshow + ' film'
+    + (LB.offshow===1?'':'s') + ' skipped — the show hasn’t covered ' + (LB.offshow===1?'it':'them') + '.</span>';
+  html += '</div>';
+
+  html += '<div class="lb-scroll"><table class="lb-tbl"><tr><th>Film</th><th>Letterboxd</th><th>Becomes</th><th>Extras</th></tr>';
+  LB.plan.forEach(function(r){
+    var extras = [];
+    if(r.times) extras.push('seen ' + r.times + '×');
+    if(r.first) extras.push('first ' + r.first);
+    if(r.rewatch) extras.push('would rewatch');
+    if(r.vibe) extras.push('notes');
+    html += '<tr' + (r.skip?' class="lb-skip"':'') + '><td>' + esc(r.title)
+      + ' <span class="muted">(' + esc(r.year||'?') + ')</span>'
+      + (r.vibe ? '<span class="lb-note">“' + esc(r.vibe.slice(0,90)) + (r.vibe.length>90?'…':'') + '”</span>' : '')
+      + '</td><td>' + esc(r.raw || '—') + '</td><td>'
+      + (r.skip ? 'already rated — skipped' : esc(r.tier)) + '</td><td>'
+      + esc(extras.join(', ') || '—') + '</td></tr>';
+  });
+  LB.wl.forEach(function(r){
+    html += '<tr><td>' + esc(r.title) + ' <span class="muted">(' + esc(r.year||'?') + ')</span></td>'
+      + '<td>watchlist</td><td>→ your watchlist</td><td>—</td></tr>';
+  });
+  html += '</table></div>';
+  html += '<button class="btn btn-gold" style="margin-top:12px" data-action="lbapply">Import ' + willWrite.length + ' rating'
+    + (willWrite.length===1?'':'s') + (LB.wl.length ? ' + ' + LB.wl.length + ' watchlist' : '') + '</button>';
+  html += '<button class="btn btn-outline btn-sm" style="margin-top:12px;margin-left:8px" data-action="lbcancel">Cancel</button>';
+  box.innerHTML = html;
+}
+
+function lbApply(){
+  if(!LB || !SUPA || !ME) return;
+  var rows = LB.plan.filter(function(r){ return !r.skip; });
+  var box = el('lbOut');
+  box.innerHTML = '<div class="lb-sum"><span class="spin"></span> Importing — don’t close this tab…</div>';
+
+  var payload = rows.map(function(r){
+    var d = { title:r.title, year:r.year||null, rating:r.tier, saved_at:new Date().toISOString() };
+    if(r.times)   d.times_seen = r.times;
+    if(r.first)   d.first_seen_year = r.first;
+    if(r.rewatch) d.rewatch = r.rewatch;
+    if(r.vibe)    d.vibe = r.vibe;
+    return d;
+  });
+
+  var jobs = [];
+  if(payload.length) jobs.push(SUPA.from('ratings').insert(payload).select());
+  if(LB.wl.length) jobs.push(SUPA.from('watchlist').insert(
+    LB.wl.map(function(w){ return { title:w.title, year:w.year||null, source:'Letterboxd import' }; })
+  ).select());
+
+  Promise.all(jobs).then(function(res){
+    var err = res.filter(function(x){ return x && x.error; })[0];
+    if(err) throw new Error(err.error.message);
+    track('letterboxd_imported', { ratings: payload.length, watchlist: LB.wl.length });
+    LB = null;
+    box.innerHTML = '<div class="lb-sum">✓ Imported <b>' + payload.length + '</b> rating'
+      + (payload.length===1?'':'s') + '. They’re in My Ratings now — open any of them to fill in the rest.</div>';
+    el('lbFiles').value = '';
+    loadCloud();
+  }).catch(function(e){
+    box.innerHTML = '<div class="lb-sum" style="border-color:var(--red)">⚠️ Import failed: '
+      + esc(e.message) + '<br>Nothing partial was left behind for ratings — try again, or send it through the feedback box.</div>';
+  });
+}
+
 /* ================= EVENT DELEGATION ================= */
 document.addEventListener('click', function(ev){
   var t = ev.target.closest('[data-action]');
@@ -3825,6 +4101,8 @@ document.addEventListener('click', function(ev){
   else if(action==='giftpopcorn') openGift(STRIPE_GIFT_POPCORN, 'popcorn');
   else if(action==='giftticket') openGift(STRIPE_GIFT_TICKET, 'ticket');
   else if(action==='giftscreening') openGift(STRIPE_GIFT_SCREENING, 'screening');
+  else if(action==='lbapply') lbApply();
+  else if(action==='lbcancel'){ LB=null; el('lbOut').innerHTML=''; el('lbFiles').value=''; }
   else if(action==='guest'){ ev.preventDefault(); enterGuest(); }
   else if(action==='gwclose'){ ev.preventDefault(); closeGuestWall(); }
   else if(action==='gwsignin'){ ev.preventDefault(); goToSignIn('Free, and your ratings stay yours — export or delete everything at any time.'); }
@@ -3842,6 +4120,7 @@ el('gwVeil').addEventListener('click', function(ev){ if(ev.target === el('gwVeil
 document.addEventListener('keydown', function(ev){
   if(ev.key === 'Escape' && el('gwVeil').classList.contains('open')) closeGuestWall();
 });
+el('lbFiles').addEventListener('change', function(){ lbHandleFiles(this.files); });
 el('q').addEventListener('input', updateAC);
 el('q').addEventListener('keydown', function(e){ if(e.key==='Enter') doSearch(); });
 el('wlq').addEventListener('keydown', function(e){ if(e.key==='Enter') wlSearch(); });
