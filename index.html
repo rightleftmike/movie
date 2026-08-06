@@ -263,12 +263,24 @@ label{font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:.0
 /* Deliberately understated: present on every screen, but it should read as a footnote, not a
    banner. Same size and colour as the surrounding disclaimer -- only the underline marks it. */
 .ep-tag{display:inline-block;margin-left:6px;font-size:10px;letter-spacing:.05em;text-transform:uppercase;color:var(--dim);border:1px solid var(--line);border-radius:6px;padding:1px 6px;vertical-align:middle}
-.hdr-back{display:none;align-items:center;justify-content:center;flex:none;width:34px;height:34px;
-  margin-right:10px;background:none;border:1px solid var(--line);border-radius:9px;color:var(--txt);
-  font-size:18px;line-height:1;cursor:pointer;padding:0;transition:border-color .16s,color .16s}
-.hdr-back:hover{border-color:var(--gold-dim);color:var(--gold)}
+/* Floats over the page rather than sitting in the header, so it can never disturb the layout.
+   z-index 55 keeps it above the sticky header (30) but below the drawer veil (60), so it tucks
+   away behind an open drawer instead of hovering over it. */
+.hdr-back{display:none;position:fixed;z-index:55;
+  top:calc(env(safe-area-inset-top, 0px) + 9px);
+  left:calc(env(safe-area-inset-left, 0px) + 10px);
+  align-items:center;justify-content:center;width:38px;height:38px;padding:0;cursor:pointer;
+  border-radius:11px;border:1px solid rgba(197,160,89,.22);
+  background:rgba(18,16,12,.62);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);
+  color:rgba(232,226,210,.85);
+  transition:background .16s,border-color .16s,color .16s}
+.hdr-back:active{background:rgba(18,16,12,.85);color:var(--gold);border-color:var(--gold-dim)}
 /* Two gates: only in standalone, and only when there is somewhere to go back to. */
 body.standalone .hdr-back.on{display:inline-flex}
+/* Give the header row somewhere to put the button. Only ever applies when the button is actually
+   showing, so a hidden button never leaves a gap. Both selectors need .standalone, so the web
+   layout cannot be touched by any of this. */
+body.standalone.can-back .hrow{padding-left:46px}
 .sset{border:1px solid var(--line);border-radius:12px;background:var(--panel);margin-top:9px;overflow:hidden}
 .sset>summary{list-style:none;cursor:pointer;padding:13px 15px;display:flex;align-items:center;gap:10px}
 .sset>summary::-webkit-details-marker{display:none}
@@ -428,10 +440,6 @@ body.preauth header, body.preauth #appWrap{display:none!important}
 <body class="preauth">
 <header><div class="wrap">
   <div class="hrow">
-    <!-- Standalone (home-screen) only: there is no browser chrome there, so nothing exposes the
-         history that tab switches and movie cards already push. Hidden outright on the web, where
-         the browser's own Back button does this job and a second one would be clutter. -->
-    <button class="hdr-back" id="hdrBack" data-action="navback" aria-label="Back" title="Back">←</button>
     <div class="logo">Rewatch Club <small id="subTitle">Screening Room</small></div>
     <div class="searchrow hdr-search">
       <input type="text" id="q" placeholder="Search films, actors, directors…" autocomplete="off">
@@ -621,6 +629,13 @@ body.preauth header, body.preauth #appWrap{display:none!important}
   </div>
 </div>
 
+<!-- Standalone (home-screen) only: no browser chrome there, so nothing exposes the history that
+     tab switches and movie cards already push. Floated rather than placed in the header, because
+     in flow it pushed the logo across and bumped Watch Tonight onto its own row. Hidden outright
+     on the web, where the browser's own Back button already does this. -->
+<button class="hdr-back" id="hdrBack" data-action="navback" aria-label="Go back" title="Back">
+  <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+</button>
 <div class="drawer-veil" id="drVeil" data-action="closedrawer"></div>
 <div class="drawer" id="drawer"></div>
 <div class="modal-veil" id="modalVeil"><div class="modal" id="modal"></div></div>
@@ -805,8 +820,9 @@ var IS_STANDALONE = (function(){
   }catch(_){ return false; }
 })();
 function renderBackBtn(){
-  var b = el('hdrBack');
-  if(b) b.classList.toggle('on', NAV_DEPTH > 0);
+  var b = el('hdrBack'), on = NAV_DEPTH > 0;
+  if(b) b.classList.toggle('on', on);
+  document.body.classList.toggle('can-back', on);
 }
 function navPushTab(tab){
   if(NAV_REPLAY) return;
@@ -2018,10 +2034,20 @@ function loadPersonThumb(p){
 }
 
 /* ================= MOVIE CARD ================= */
+// Both the window and (on some iOS versions in standalone) the scrolling element need telling.
+function jumpToTop(){
+  try{
+    window.scrollTo(0, 0);
+    if(document.scrollingElement) document.scrollingElement.scrollTop = 0;
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+  }catch(_){}
+}
 function openMovieByTitle(title, year){
   navPushMovie(null, title, year);
   el('cardBox').innerHTML = '<div class="card"><span class="spin"></span> Loading ' + esc(title) + '…</div>';
   showTab('search');
+  jumpToTop();
   findMovie(title, year).then(function(hit){
     if(!hit) throw new Error('Not found on TMDB: ' + title);
     return openMovieCard(hit.id, true);
@@ -2033,11 +2059,11 @@ function openMovieCard(tmdbId, skipNav){
   if(!skipNav) navPushMovie(tmdbId, null, null);
   el('cardBox').innerHTML = '<div class="card"><span class="spin"></span> Loading…</div>';
   showTab('search');
+  jumpToTop();
   return tmdbMovie(tmdbId).then(function(m){
     CURRENT_CARD_MOVIE = m;
     el('cardBox').innerHTML = movieCardHTML(m);
     el('searchResults').innerHTML = '';
-    window.scrollTo({ top: 0, behavior: 'smooth' });
     var epy = m.release_date ? m.release_date.slice(0,4) : '';
     if(rwFind(m.title, epy)) fillEpisodeBox(m.title, epy ? Number(epy) : null);
     fillRWCounts();
