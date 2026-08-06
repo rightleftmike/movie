@@ -3517,6 +3517,30 @@ function refreshSuggestBadges(){
     if(wlWrap) wlWrap.innerHTML = watchlistToggleHTML(s.title, s.year, 'claude suggestion', true);
   });
 }
+// Beyond Rewatchables no longer asks the model to invent films from memory. It draws from
+// candidate_films: a precomputed, deterministically ranked pool of films the show has NEVER
+// covered, scored server-side on how much they look like ones it would -- how often the show
+// returns to the people involved, how close the film sits to each of those people's own show-era,
+// and whether its decade/genre/studio/language match the show's silhouette.
+//
+// Why it matters: asked to free-associate, a language model reaches for canonical titles. It will
+// happily suggest Ferris Bueller and never surface Gung Ho, despite Gung Ho carrying Keaton, Ron
+// Howard and both Mr. Mom screenwriters. The arithmetic finds those; the model is then only asked
+// to do the thing it is genuinely better at -- reading what someone wrote about a film and
+// judging what that implies.
+//
+// None of the scoring uses AI, so this half keeps working if the AI credit runs out.
+function loadCandidatePool(){
+  if(!SUPA) return Promise.resolve([]);
+  return SUPA.from('candidate_films')
+    .select('title,year,score,top_people')
+    .order('score', { ascending: false }).limit(90)
+    .then(function(res){
+      if(res.error || !res.data) return [];
+      // Anything already rated is not a recommendation.
+      return res.data.filter(function(c){ return !myFind(c.title, c.year); });
+    }).catch(function(){ return []; });
+}
 function runSuggest(){
   var out = el('sugOut');
   track('suggestion_requested', {
@@ -3527,12 +3551,34 @@ function runSuggest(){
   });
   out.innerHTML = aiThinkingHTML('suggest');
   var profile = tasteProfile();
+  // Only Beyond mode needs a network round trip before the prompt can be written; every other
+  // mode resolves immediately so nothing else got slower.
+  var poolP = (SUG_MODE === 'beyond') ? loadCandidatePool() : Promise.resolve(null);
+  poolP.then(function(pool){
   var prompt = '';
   if(SUG_MODE === 'show'){
     var unrated = RW.filter(function(f){ return !myFind(f.title, f.year); }).map(function(f){ return f.title + ' (' + f.year + ', ' + f.director + ')'; });
     prompt = profile + '\n\nUNRATED REWATCHABLES EPISODES:\n' + unrated.join('; ').slice(0,6000)
       + '\n\nFrom the unrated episode list above ONLY, pick the 5 films I am most likely to love. For each, give a reason tied to specific films/notes in my ratings.';
+  } else if(SUG_MODE === 'beyond' && pool && pool.length >= 12){
+    // The pool is already off-show by construction, so the old "here are 486 titles, avoid them"
+    // block is gone -- shorter prompt AND a better one. Each entry carries the people who earned
+    // it a place, so the model can cite a real connection instead of inventing a rationale.
+    var poolText = pool.map(function(c){
+      var who = (c.top_people||[]).filter(function(x){ return Number(x.pts) >= 1; })
+                 .slice(0,4).map(function(x){ return x.name; }).join(', ');
+      return c.title + ' (' + c.year + ')' + (who ? ' — ' + who : '');
+    }).join('\n').slice(0,7000);
+    prompt = profile
+      + '\n\nCANDIDATE FILMS (none have ever been covered on the podcast; the names after each are'
+      + ' people the show repeatedly returns to who worked on it, during the era the show favours'
+      + ' them):\n' + poolText
+      + '\n\nFrom the candidate list above ONLY, pick the 5 I am most likely to love.'
+      + ' Do not pick more than 2 from any one decade, and do not pick 2 films sharing the same lead actor.'
+      + ' Each reason must connect the film to specific titles or notes in my ratings -- you may also'
+      + ' mention the shared cast/crew, but taste comes first.';
   } else if(SUG_MODE === 'beyond'){
+    // Fallback if the pool is unreachable or too thin after filtering out what's already rated.
     var showTitles = RW.map(function(f){ return f.title; }).join('; ').slice(0,12000);
     prompt = profile + '\n\nFILMS ALREADY ON THE REWATCHABLES PODCAST (avoid these):\n' + showTitles
       + '\n\nSuggest 5 films NOT on that list and NOT in my ratings that I would love. Reasons must reference my actual rated films/notes.';
@@ -3588,6 +3634,7 @@ function runSuggest(){
     out.innerHTML = html + aiFooterHTML();
     track('suggestion_result_shown', { count: arr.length });
   }).catch(function(e){ out.innerHTML = aiErrorHTML(e); });
+  });   // end poolP.then
 }
 
 /* ================= ADD TO HOME SCREEN ================= */
