@@ -440,7 +440,15 @@ body.preauth header, body.preauth #appWrap{display:none!important}
       return url;
     }catch(_){ return url; }
   }
+  // Only ever report from the real production site. Without this, opening index.html straight off
+  // disk (file://) or from any other host runs this same embedded snippet and ships dev/test
+  // traffic into the production PostHog project -- discovered 2026-08-11 when a local file:// path
+  // (containing the full local username and Drive folder structure) showed up as a live Pageview.
+  function isProdOrigin(){
+    return location.protocol === 'https:' && /(^|\.)rewatchclub\.com$/.test(location.hostname);
+  }
   function initAnalytics(){
+    if(!isProdOrigin()) return;
     posthog.init('phc_B8xGHEhBDVZsnyC9ib5rqiqTYdXsStUYXaHufm95AMdA', {
       api_host: 'https://us.i.posthog.com',
       ui_host: 'https://us.posthog.com',
