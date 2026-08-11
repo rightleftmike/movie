@@ -423,6 +423,23 @@ body.preauth header, body.preauth #appWrap{display:none!important}
   u.people=u.people||[],u.toString=function(t){var e="posthog";return"posthog"!==a&&(e+="."+a),t||(e+=" (stub)"),e},
   u.people.toString=function(){return u.toString(1)+".people (stub)"},o="init capture register register_once unregister opt_in_capturing opt_out_capturing has_opted_in_capturing has_opted_out_capturing identify reset group setPersonProperties".split(" "),
   n=0;n<o.length;n++)g(u,o[n]);e._i.push([i,s,a])},e.__SV=1)}(document,window.posthog||[]);
+  // Belt-and-suspenders alongside the PKCE auth flow (2026-08-11): PostHog's automatic $pageview
+  // captures raw location.href, and this app also fires manual $pageview events with the hash
+  // included (see trackPageview() -- needed because in-app screens live behind a URL hash, which
+  // PostHog's own $pathname can't see). Either path would ship a stray auth token straight to
+  // PostHog's servers if one were ever still in the URL. sanitize_properties strips any hash that
+  // looks like an auth callback (access_token / refresh_token / provider_token / code) off every
+  // outgoing event, regardless of how or when it was captured.
+  function stripAuthHash(url){
+    if(!url) return url;
+    try{
+      var hashStart = url.indexOf('#');
+      if(hashStart === -1) return url;
+      var hash = url.slice(hashStart + 1);
+      if(/(^|&)(access_token|refresh_token|provider_token|code)=/.test(hash)) return url.slice(0, hashStart);
+      return url;
+    }catch(_){ return url; }
+  }
   function initAnalytics(){
     posthog.init('phc_B8xGHEhBDVZsnyC9ib5rqiqTYdXsStUYXaHufm95AMdA', {
       api_host: 'https://us.i.posthog.com',
@@ -432,7 +449,13 @@ body.preauth header, body.preauth #appWrap{display:none!important}
       capture_pageview: true,
       disable_session_recording: true,
       respect_dnt: true,
-      persistence: 'memory'
+      persistence: 'memory',
+      sanitize_properties: function(properties){
+        if(properties['$current_url']) properties['$current_url'] = stripAuthHash(properties['$current_url']);
+        if(properties['$pathname']) properties['$pathname'] = stripAuthHash(properties['$pathname']);
+        if(properties['$referrer']) properties['$referrer'] = stripAuthHash(properties['$referrer']);
+        return properties;
+      }
     });
   }
   if('requestIdleCallback' in window) requestIdleCallback(initAnalytics, { timeout: 3000 });
@@ -722,8 +745,13 @@ var SB_URL = 'https://ylexjdgfkcinnxjzmakt.supabase.co';
 var SB_KEY = 'sb_publishable_NnuHKulCrQ1xfiy19jLjtA_goENmK-c';
 // supabase-js client: handles the auth session, token refresh and the Authorization
 // header automatically, so every from() call runs as the signed-in user.
+// flowType: 'pkce' -- OAuth/magic-link callbacks land as ?code=... instead of
+// #access_token=...&refresh_token=.... The code is single-use and worthless without the verifier
+// held in this browser, so unlike the implicit flow's tokens, nothing sensitive is ever exposed in
+// the URL for analytics, browser history, or a Referer header to pick up. (Found 2026-08-11: PostHog's
+// pageview capture was recording raw session tokens off the URL hash under the old implicit flow.)
 var SUPA = (window.supabase && window.supabase.createClient)
-  ? window.supabase.createClient(SB_URL, SB_KEY, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } })
+  ? window.supabase.createClient(SB_URL, SB_KEY, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, flowType: 'pkce' } })
   : null;
 var ME = null, PROFILE = null, BOOTED = false;
 // Cached result of my_ai_credit_status(). Server-side reserve_ai_credit() is the only real
