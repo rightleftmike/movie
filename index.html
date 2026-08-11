@@ -826,15 +826,30 @@ function renderBackBtn(){
   if(b) b.classList.toggle('on', on);
   document.body.classList.toggle('can-back', on);
 }
+// PostHog's automatic $pageview only fires once per full page load, and its $pathname property
+// is derived from location.pathname -- which never changes here, since every in-app screen lives
+// behind a URL hash (#show, #movie, ...) and hashes aren't part of a pathname by spec. Left alone,
+// every screen in the app reports as the same "/" page, so PostHog's Pages report can't tell a
+// Show List visit from a movie card. Firing an explicit $pageview on every hash change fixes that
+// -- passing both $current_url and a synthetic $pathname (path + hash) so the breakdown works
+// however PostHog groups it.
+function trackPageview(){
+  try{
+    if(!window.posthog || !posthog.capture) return;
+    posthog.capture('$pageview', { $current_url: location.href, $pathname: location.pathname + location.hash });
+  }catch(_){}
+}
 function navPushTab(tab){
   if(NAV_REPLAY) return;
   history.pushState({ view:'tab', tab: tab, d: ++NAV_DEPTH }, '', '#' + tab);
   renderBackBtn();
+  trackPageview();
 }
 function navPushMovie(id, title, year){
   if(NAV_REPLAY) return;
   history.pushState({ view:'movie', id: id || null, title: title || null, year: year || null, d: ++NAV_DEPTH }, '', '#movie');
   renderBackBtn();
+  trackPageview();
 }
 // Overlays (drawer, rating form, lightbox, player, voice) are not history entries, so plain
 // history.back() behind an open one would change the page underneath and leave the overlay
@@ -865,6 +880,7 @@ function initNav(){
       else if(st.view==='movie'){ if(st.id) openMovieCard(st.id, true); else openMovieByTitle(st.title, st.year); }
     } finally { NAV_REPLAY = false; }
     renderBackBtn();
+    trackPageview();
   });
 }
 
