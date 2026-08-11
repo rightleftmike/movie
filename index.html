@@ -1753,6 +1753,37 @@ function auditRW(){
   });
 }
 
+/* ================= Authenticated edge-function calls ================= */
+// Shared by every signed-in-only edge function (ai-proxy, character-photos, voice-tts,
+// delete-my-data). getSession() hands back whatever's cached locally -- it does NOT guarantee
+// the access token is still valid server-side (a long-idle tab, a refresh that raced/lost against
+// another tab, etc. can leave a dead token in place until the next proactive refresh timer fires).
+// That gap was surfacing as a raw "Invalid or expired session -- sign in again" error straight in
+// the UI. This wraps the call so a 401 triggers one forced refreshSession() + one retry before
+// giving up, instead of failing on the first stale token.
+function authedFetch(path, body){
+  if(!SUPA || !ME) return Promise.reject(new Error('Not signed in'));
+  function callWith(session){
+    return fetch(SB_URL + '/functions/v1/' + path, {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + session.access_token, 'content-type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+  }
+  return SUPA.auth.getSession().then(function(res){
+    var session = res.data && res.data.session;
+    if(!session) throw new Error('Not signed in');
+    return callWith(session).then(function(r){
+      if(r.status !== 401) return r;
+      return SUPA.auth.refreshSession().then(function(rr){
+        var fresh = rr.data && rr.data.session;
+        if(!fresh) return r; // nothing to refresh with -- surface the original 401
+        return callWith(fresh);
+      }).catch(function(){ return r; });
+    });
+  });
+}
+
 /* ================= AI (Gemini via server-side proxy) ================= */
 // Every AI feature (Suggest, Refine, Watch Tonight) shares this one call. The actual model key
 // lives only in the ai-proxy edge function's secrets — never in the browser. The proxy also
@@ -1760,15 +1791,8 @@ function auditRW(){
 // as well as a plain network/API error — callers should check err.upgradeRequired.
 function askClaude(prompt, maxTokens, feature){
   if(!SUPA || !ME) return Promise.reject(new Error('Not signed in'));
-  return SUPA.auth.getSession().then(function(res){
-    var session = res.data && res.data.session;
-    if(!session) throw new Error('Not signed in');
-    return fetch(SB_URL + '/functions/v1/ai-proxy', {
-      method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + session.access_token, 'content-type': 'application/json' },
-      body: JSON.stringify({ prompt: prompt, max_tokens: maxTokens || 1200, feature: feature || 'unknown' })
-    });
-  }).then(function(r){
+  return authedFetch('ai-proxy', { prompt: prompt, max_tokens: maxTokens || 1200, feature: feature || 'unknown' })
+  .then(function(r){
     return r.json().catch(function(){ return {}; }).then(function(j){
       if(!r.ok){
         var err = new Error(j.error || ('AI proxy error ' + r.status));
@@ -2375,15 +2399,8 @@ function closeAgeInfo(){ el('ageVeil').classList.remove('open'); }
 // there's no client-side caching bypass -- every click is a real, capped request. ----
 function fetchCharacterPhotos(personId, movieId, actor, character, title, year){
   if(!SUPA || !ME) return Promise.reject(new Error('Not signed in'));
-  return SUPA.auth.getSession().then(function(res){
-    var session = res.data && res.data.session;
-    if(!session) throw new Error('Not signed in');
-    return fetch(SB_URL + '/functions/v1/character-photos', {
-      method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + session.access_token, 'content-type': 'application/json' },
-      body: JSON.stringify({ personId: personId, movieId: movieId, actor: actor, character: character || '', title: title, year: year || null })
-    });
-  }).then(function(r){
+  return authedFetch('character-photos', { personId: personId, movieId: movieId, actor: actor, character: character || '', title: title, year: year || null })
+  .then(function(r){
     return r.json().catch(function(){ return {}; }).then(function(j){
       if(!r.ok){
         var err = new Error(j.error || ('Character photo search error ' + r.status));
@@ -3300,15 +3317,8 @@ function voiceSpeak(text){
     if(VOICE){ VOICE.speaking = false; renderVoiceStep(); }
     return Promise.resolve();
   }
-  return SUPA.auth.getSession().then(function(res){
-    var session = res.data && res.data.session;
-    if(!session) throw new Error('not signed in');
-    return fetch(SB_URL + '/functions/v1/voice-tts', {
-      method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + session.access_token, 'content-type': 'application/json' },
-      body: JSON.stringify({ text: text })
-    });
-  }).then(function(r){ return r.json().catch(function(){ return {}; }).then(function(j){ return { ok:r.ok, j:j }; }); })
+  return authedFetch('voice-tts', { text: text })
+  .then(function(r){ return r.json().catch(function(){ return {}; }).then(function(j){ return { ok:r.ok, j:j }; }); })
     .then(function(res){
       if(!res.ok || !res.j.audio || !VOICE || VOICE.muted){
         if(VOICE){ VOICE.speaking = false; renderVoiceStep(); }
@@ -3990,15 +4000,8 @@ function confirmDeleteAccount(){
   }
   if(!SUPA || !ME){ out.innerHTML = '<span style="color:var(--red)">Not signed in.</span>'; return; }
   out.innerHTML = '<span class="spin"></span> Deleting everything…';
-  SUPA.auth.getSession().then(function(res){
-    var session = res.data && res.data.session;
-    if(!session) throw new Error('Not signed in');
-    return fetch(SB_URL + '/functions/v1/delete-my-data', {
-      method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + session.access_token, 'content-type': 'application/json' },
-      body: JSON.stringify({ confirm: 'DELETE' })
-    });
-  }).then(function(r){
+  authedFetch('delete-my-data', { confirm: 'DELETE' })
+  .then(function(r){
     return r.json().catch(function(){ return {}; }).then(function(j){
       if(!r.ok) throw new Error(j.error || ('Delete failed (' + r.status + ')'));
       return j;
