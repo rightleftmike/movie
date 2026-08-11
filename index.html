@@ -1973,14 +1973,14 @@ function renderShow(){
     var idx = ref({ type:'movie', title:realTitle, year:f.year });
     var badge = ratingBadgeHTML(realTitle, f.year);
     var epTag = episodeTagFor(f.title);
-    var t = f.airDate ? new Date(f.airDate).getTime() : NaN;
-    var upcoming = !isNaN(t) && t > Date.now();
-    var when = upcoming
-      ? ' <span class="upcoming-tag">Airs ' + esc(new Date(t).toLocaleDateString(undefined,{month:'short',day:'numeric'})) + '</span>'
-      : '';
+    // No "Airs <date>" badge: air_date is stored as a UTC calendar day, but comparing it to the
+    // viewer's local clock made already-released episodes read as upcoming for hours depending on
+    // timezone. The data pipeline guarantees every row here has already aired -- the seed only ever
+    // held past episodes, and merge_feed_episodes() rejects anything dated after today -- so the
+    // badge could never fire correctly and was removed rather than patched.
     html += '<div class="rowitem"><div class="grow" data-action="movie" data-ref="' + idx + '">'
       + '<div class="t"><span class="tt">' + esc(realTitle) + ' <span class="muted">(' + esc(f.year) + ')</span></span>'
-      + (epTag ? ' <span class="ep-tag">' + esc(epTag) + '</span>' : '') + when + '</div>'
+      + (epTag ? ' <span class="ep-tag">' + esc(epTag) + '</span>' : '') + '</div>'
       + '<div class="s">' + [f.director, f.genres].filter(Boolean).map(esc).join(' · ') + '</div></div>'
       + badge + '</div>';
   }
